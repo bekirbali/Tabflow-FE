@@ -70,161 +70,207 @@ export default function ContentCard({
   };
 
   // Helper to open the focus modal
-  const handleCardClick = () => {
+  const handleFocusClick = (e) => {
+    e.stopPropagation();
     if (onFocusClick) {
+      onFocusClick(video);
+    }
+  };
+
+  // Helper to play video inline in feed
+  const handlePlayClick = (e) => {
+    e.stopPropagation();
+    if (type === "video" && video_id) {
+      setIsPlaying(true);
+    } else if (onFocusClick) {
       onFocusClick(video);
     }
   };
 
   return (
     <article
-      onClick={handleCardClick}
-      className={`relative flex flex-col bg-zinc-900/60 border rounded-2xl overflow-hidden shadow-lg transition-all duration-300 ease-out cursor-pointer ${
+      className={`relative flex flex-col bg-zinc-900/80 border rounded-2xl md:rounded-3xl overflow-hidden shadow-xl transition-all duration-300 ease-out ${
         isFocused 
-          ? "border-violet-500 shadow-xl shadow-violet-500/10 ring-2 ring-violet-500/20 scale-[1.015] bg-zinc-900/90" 
-          : "border-white/5 hover:border-white/15 hover:shadow-2xl hover:shadow-violet-950/10"
+          ? "border-violet-500 shadow-2xl shadow-violet-500/20 ring-2 ring-violet-500/30 scale-[1.01] bg-zinc-900" 
+          : "border-white/10 hover:border-white/20 hover:shadow-2xl hover:shadow-violet-950/20"
       } ${
         isFadingOut ? "opacity-0 scale-95 -translate-y-4" : "opacity-100 scale-100 translate-y-0"
       } group`}
     >
       {/* Top Header - Source & Date details */}
-      <div className="flex items-center justify-between p-4 sm:p-4 border-b border-white/5 bg-zinc-950/20">
+      <div className="flex items-center justify-between p-4 px-5 border-b border-white/5 bg-zinc-950/40">
         <div className="flex items-center gap-3">
           {/* Custom Avatar Icon based on type */}
-          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-white select-none shadow-md ${
+          <div className={`h-9 w-9 rounded-full flex items-center justify-center text-white select-none shadow-lg shrink-0 ${
             type === "video" 
-              ? "bg-gradient-to-tr from-rose-600 to-amber-500" 
+              ? "bg-gradient-to-tr from-rose-600 via-orange-500 to-amber-500" 
               : type === "article"
               ? "bg-gradient-to-tr from-violet-600 to-cyan-500"
               : type === "code"
               ? "bg-gradient-to-tr from-zinc-800 to-zinc-600 border border-white/10"
               : "bg-gradient-to-tr from-teal-600 to-emerald-500"
           }`}>
-            {type === "video" && <Play className="h-3.5 w-3.5 fill-white" />}
-            {type === "article" && <BookOpen className="h-3.5 w-3.5" />}
-            {type === "code" && <Code className="h-3.5 w-3.5" />}
-            {type === "general" && <Globe className="h-3.5 w-3.5" />}
+            {type === "video" && <Play className="h-4 w-4 fill-white ml-0.5" />}
+            {type === "article" && <BookOpen className="h-4 w-4" />}
+            {type === "code" && <Code className="h-4 w-4" />}
+            {type === "general" && <Globe className="h-4 w-4" />}
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-zinc-200">
+            <span className="text-sm font-bold text-zinc-100 leading-tight">
               {source_name}
             </span>
-            <span className="text-xs text-zinc-500 font-medium">
+            <span className="text-xs text-zinc-400 font-medium mt-0.5">
               {formatTimeAgo(video.created_at || video.addedAt)}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {type === "article" && read_time && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-500/10 border border-violet-500/20 text-violet-400">
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400">
               {read_time}
             </span>
           )}
           {type === "code" && language && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-800 border border-white/5 text-zinc-300">
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-zinc-800 border border-white/10 text-zinc-300">
               {language}
             </span>
           )}
           {type === "video" && duration && duration !== "0:00" && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-1">
-              <Clock className="h-3 w-3 text-rose-400" />
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-rose-400" />
               <span>{duration}</span>
             </span>
           )}
           <button
             onClick={handleDeleteClick}
             aria-label="Kalıcı Sil"
-            className="p-2 rounded-xl text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all active:scale-90"
+            className="p-2 rounded-xl text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all active:scale-90 cursor-pointer"
           >
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex flex-col md:flex-row flex-1">
-        {/* Render media thumbnail if type is video or if it has a thumbnail image */}
-        {(type === "video" || thumbnail_url) && (
-          <div className={`relative bg-zinc-950 overflow-hidden shrink-0 ${
-            type === "video" ? "aspect-video w-full" : "aspect-video w-full md:aspect-square md:w-32"
-          }`}>
-            {type === "video" && video_id ? (
-              <>
+      {/* Media Thumbnail Section - Full Width Big Preview */}
+      {(type === "video" || thumbnail_url) ? (
+        <div className="relative w-full aspect-video bg-zinc-950 overflow-hidden border-b border-white/5">
+          {type === "video" && video_id ? (
+            isPlaying ? (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${video_id}?autoplay=1&rel=0`}
+                title={title}
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            ) : (
+              <div 
+                onClick={handlePlayClick}
+                className="relative w-full h-full cursor-pointer group/media"
+              >
                 <img
                   src={thumbnail_url || `https://img.youtube.com/vi/${video_id}/hqdefault.jpg`}
                   alt={title}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover/media:scale-105"
                   loading="lazy"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/60 via-transparent to-transparent opacity-60" />
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-black/20" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-12 w-12 flex items-center justify-center rounded-full bg-zinc-950/80 border border-white/20 backdrop-blur-md shadow-2xl transition-all duration-300 group-hover:scale-110 group-hover:bg-violet-600 group-hover:border-violet-400">
-                    <Play className="h-5 w-5 text-white fill-white ml-0.5" />
-                  </div>
+                  <button 
+                    onClick={handlePlayClick}
+                    aria-label="Videoyu Akışta Oynat"
+                    className="h-16 w-16 flex items-center justify-center rounded-full bg-zinc-950/75 border border-white/20 backdrop-blur-md shadow-2xl transition-all duration-300 group-hover/media:scale-110 group-hover/media:bg-violet-600 group-hover/media:border-violet-400 group-hover/media:shadow-violet-600/40 cursor-pointer"
+                  >
+                    <Play className="h-7 w-7 text-white fill-white ml-1" />
+                  </button>
                 </div>
-                {duration && duration !== "0:00" && (
-                  <div className="absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-950/80 border border-white/10 backdrop-blur-sm text-[9px] font-bold text-white">
-                    <Clock className="h-2.5 w-2.5 text-zinc-400" />
-                    <span>{duration}</span>
-                  </div>
-                )}
-              </>
-            ) : (
-              // Image preview for articles / general links
+              </div>
+            )
+          ) : (
+            // Image preview for articles / general links
+            <a 
+              href={url} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="block w-full h-full cursor-pointer"
+            >
               <img
                 src={thumbnail_url}
                 alt={title}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                 loading="lazy"
               />
+            </a>
+          )}
+        </div>
+      ) : (
+        /* Styled fallback banner for link without thumbnail */
+        <a 
+          href={url}
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="relative w-full p-6 bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 border-b border-white/5 flex items-center gap-4 hover:bg-zinc-900/80 transition-colors"
+        >
+          <div className="h-12 w-12 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center shrink-0 text-violet-400">
+            {type === "code" ? <Code className="h-6 w-6" /> : <Globe className="h-6 w-6" />}
+          </div>
+          <div className="truncate flex-1">
+            <span className="text-xs font-semibold text-zinc-500 block truncate">{url}</span>
+            <span className="text-sm font-bold text-zinc-200 block truncate">{title}</span>
+          </div>
+        </a>
+      )}
+
+      {/* Card Info Section - Title & Description */}
+      <div className="flex-1 flex flex-col p-5 sm:p-6 justify-between gap-3 bg-zinc-900/20">
+        <div className="flex flex-col gap-2">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group/title inline-block"
+          >
+            <h2 className="text-base sm:text-lg font-bold text-zinc-100 leading-snug tracking-tight group-hover/title:text-violet-300 transition-colors line-clamp-2">
+              {title}
+            </h2>
+          </a>
+          {description && (
+            <p className="text-xs sm:text-sm text-zinc-400 line-clamp-2 leading-relaxed">
+              {description}
+            </p>
+          )}
+        </div>
+
+        {/* Extra info for GitHub / Code links */}
+        {type === "code" && (stars !== undefined || video.metadata?.forks !== undefined) && (
+          <div className="flex items-center gap-4 text-xs text-zinc-400 font-medium pt-1">
+            {stars !== undefined && (
+              <span className="flex items-center gap-1.5">
+                <Star className="h-4 w-4 text-amber-500 fill-amber-500/20" />
+                <span>{stars.toLocaleString()} yıldız</span>
+              </span>
+            )}
+            {video.metadata?.forks !== undefined && (
+              <span className="flex items-center gap-1.5">
+                <GitFork className="h-4 w-4 text-zinc-400" />
+                <span>{video.metadata.forks.toLocaleString()} fork</span>
+              </span>
             )}
           </div>
         )}
 
-        {/* Text Details */}
-        <div className="flex-1 flex flex-col p-4 sm:p-5 justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h2 className="text-base font-bold text-zinc-100 line-clamp-2 leading-snug tracking-tight group-hover:text-white transition-colors">
-              {title}
-            </h2>
-            {description && (
-              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
-                {description}
-              </p>
-            )}
+        {/* Fallback detail URL for general links */}
+        {type === "general" && !thumbnail_url && (
+          <div className="text-xs text-zinc-500 font-semibold truncate flex items-center gap-1.5 pt-1">
+            <Globe className="h-3.5 w-3.5 text-zinc-500" />
+            <a href={url} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{url}</a>
           </div>
-
-          {/* Repo statistics for GitHub */}
-          {type === "code" && (stars !== undefined || video.metadata?.forks !== undefined) && (
-            <div className="flex items-center gap-3 mt-3 text-xs text-zinc-500 font-medium">
-              {stars !== undefined && (
-                <span className="flex items-center gap-1">
-                  <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" />
-                  <span>{stars.toLocaleString()} yıldız</span>
-                </span>
-              )}
-              {video.metadata?.forks !== undefined && (
-                <span className="flex items-center gap-1">
-                  <GitFork className="h-3.5 w-3.5 text-zinc-500" />
-                  <span>{video.metadata.forks.toLocaleString()} fork</span>
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Fallback details for general links */}
-          {type === "general" && (
-            <div className="text-xs text-zinc-500 font-semibold truncate mt-3 flex items-center gap-1">
-              <Globe className="h-3 w-3" />
-              <span>{url}</span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Interaction Footer */}
-      <div className="flex items-center justify-between p-3 sm:p-4 border-t border-white/5 bg-zinc-950/20">
+      <div className="flex items-center justify-between p-3.5 px-5 border-t border-white/5 bg-zinc-950/40">
         <div className="flex items-center gap-2">
           {/* Like Button */}
           <button
@@ -232,13 +278,13 @@ export default function ContentCard({
               e.stopPropagation();
               onLike(video.id);
             }}
-            className={`p-2 rounded-xl transition-all duration-300 active:scale-90 ${
+            className={`p-2.5 rounded-xl transition-all duration-300 active:scale-90 cursor-pointer ${
               video.liked
-                ? "text-rose-500 bg-rose-500/10"
-                : "text-zinc-500 hover:text-rose-400 hover:bg-rose-500/5"
+                ? "text-rose-500 bg-rose-500/10 border border-rose-500/20"
+                : "text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent"
             }`}
           >
-            <Heart className={`h-4.5 w-4.5 ${video.liked ? "fill-rose-500" : ""}`} />
+            <Heart className={`h-5 w-5 ${video.liked ? "fill-rose-500" : ""}`} />
           </button>
 
           {/* Bookmark Button */}
@@ -247,35 +293,32 @@ export default function ContentCard({
               e.stopPropagation();
               onBookmark(video.id);
             }}
-            className={`p-2 rounded-xl transition-all duration-300 active:scale-90 ${
+            className={`p-2.5 rounded-xl transition-all duration-300 active:scale-90 cursor-pointer ${
               video.bookmarked
-                ? "text-amber-500 bg-amber-500/10"
-                : "text-zinc-500 hover:text-amber-400 hover:bg-amber-500/5"
+                ? "text-amber-500 bg-amber-500/10 border border-amber-500/20"
+                : "text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 border border-transparent"
             }`}
           >
-            <Bookmark className={`h-4.5 w-4.5 ${video.bookmarked ? "fill-amber-500" : ""}`} />
+            <Bookmark className={`h-5 w-5 ${video.bookmarked ? "fill-amber-500" : ""}`} />
           </button>
         </div>
 
-        {/* Dynamic Actions */}
-        <div className="flex items-center gap-2">
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCardClick();
-            }}
-            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-zinc-400 bg-zinc-800/40 hover:bg-zinc-800 border border-white/5 transition-all select-none"
+            onClick={handleFocusClick}
+            className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-semibold text-zinc-300 bg-zinc-800/60 hover:bg-zinc-800 border border-white/10 transition-all active:scale-97 select-none cursor-pointer"
           >
-            <Maximize2 className="h-3.5 w-3.5" />
+            <Maximize2 className="h-3.5 w-3.5 text-zinc-400" />
             <span>Odak Modu</span>
           </button>
 
           {activeTab === "feed" && (
             <button
               onClick={handleActionClick}
-              className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all active:scale-97 select-none"
+              className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all active:scale-97 select-none cursor-pointer shadow-sm shadow-emerald-950/20"
             >
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-4 w-4 stroke-[2.5]" />
               <span>W - Tamamlandı</span>
             </button>
           )}
@@ -283,9 +326,9 @@ export default function ContentCard({
           {activeTab === "watched" && (
             <button
               onClick={handleActionClick}
-              className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-xs font-semibold text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-all active:scale-97 select-none"
+              className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-bold text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-all active:scale-97 select-none cursor-pointer shadow-sm shadow-violet-950/20"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="h-4 w-4" />
               <span>Geri Al</span>
             </button>
           )}

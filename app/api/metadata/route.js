@@ -16,31 +16,49 @@ function formatDuration(secondsStr) {
   return `${m}:${formattedSecs}`;
 }
 
-// Helper to parse ISO 8601 durations (e.g. "PT18M45S" -> 1125)
+// Helper to parse ISO 8601 durations (e.g. "PT18M45S" -> 1125, "PT1H2M3S" -> 3723)
 function parseISO8601Duration(isoStr) {
-  const match = isoStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!isoStr) return null;
+  const match = isoStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);
   if (!match) return null;
   const hours = parseInt(match[1] || 0, 10);
   const minutes = parseInt(match[2] || 0, 10);
   const seconds = parseInt(match[3] || 0, 10);
-  return hours * 3600 + minutes * 60 + seconds;
+  const total = hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : null;
 }
 
-// Scrape YouTube duration from embed page
+// Scrape YouTube duration from watch page HTML
 function extractYouTubeDuration(html) {
-  try {
-    const regex = /lengthSeconds["\\]+:\s*["\\]+(\d+)/;
-    const match = html.match(regex);
-    if (match && match[1]) {
-      return formatDuration(match[1]);
-    }
-  } catch (e) {}
+  if (!html) return null;
 
+  // Method 1: Check Schema meta tag itemprop="duration"
   try {
-    const durationMetaMatch = html.match(/itemprop="duration"\s+content="([^"]+)"/i);
+    const durationMetaMatch = html.match(/itemprop=["']duration["']\s+content=["']([^"']+)["']/i) || 
+                              html.match(/content=["']([^"']+)["']\s+itemprop=["']duration["']/i);
     if (durationMetaMatch && durationMetaMatch[1]) {
       const seconds = parseISO8601Duration(durationMetaMatch[1]);
       if (seconds) return formatDuration(seconds);
+    }
+  } catch (e) {}
+
+  // Method 2: Check lengthSeconds in ytInitialPlayerResponse JSON (matches "lengthSeconds":"123" or "lengthSeconds":123)
+  try {
+    const regex = /["\\]?lengthSeconds["\\]?\s*:\s*["\\]?(\d+)["\\]?/;
+    const match = html.match(regex);
+    if (match && match[1]) {
+      const secs = parseInt(match[1], 10);
+      if (secs > 0) return formatDuration(secs);
+    }
+  } catch (e) {}
+
+  // Method 3: Check approxDurationMs in ytInitialPlayerResponse JSON
+  try {
+    const regexMs = /["\\]?approxDurationMs["\\]?\s*:\s*["\\]?(\d+)["\\]?/;
+    const matchMs = html.match(regexMs);
+    if (matchMs && matchMs[1]) {
+      const secs = Math.round(parseInt(matchMs[1], 10) / 1000);
+      if (secs > 0) return formatDuration(secs);
     }
   } catch (e) {}
 
@@ -89,16 +107,17 @@ export async function GET(request) {
           metadata.video_id = video_id;
           metadata.thumbnail_url = `https://img.youtube.com/vi/${video_id}/hqdefault.jpg`;
           
-          // Fetch oEmbed details
+          // Fetch oEmbed details and watch HTML page in parallel
           try {
             const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-            const embedUrl = `https://www.youtube.com/embed/${video_id}`;
+            const watchUrl = `https://www.youtube.com/watch?v=${video_id}`;
             
-            const [oembedRes, embedRes] = await Promise.all([
+            const [oembedRes, watchRes] = await Promise.all([
               fetch(oembedUrl).catch(() => null),
-              fetch(embedUrl, {
+              fetch(watchUrl, {
                 headers: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                  "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
                 }
               }).catch(() => null)
             ]);
@@ -109,15 +128,15 @@ export async function GET(request) {
               source_name = oembedData.author_name || source_name;
             }
 
-            if (embedRes && embedRes.ok) {
-              const embedHtml = await embedRes.text();
-              const duration = extractYouTubeDuration(embedHtml);
+            if (watchRes && watchRes.ok) {
+              const watchHtml = await watchRes.text();
+              const duration = extractYouTubeDuration(watchHtml);
               if (duration) {
                 metadata.duration = duration;
               }
             }
           } catch (e) {
-            console.error("YouTube oEmbed fail:", e);
+            console.error("YouTube oEmbed/Watch fail:", e);
           }
         }
       }
