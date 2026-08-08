@@ -22,19 +22,25 @@ export default function ContentCard({
 
   // Normalize properties for backward compatibility
   const id = video.id || video.videoId;
-  const url = video.url;
-  const video_id = video.video_id || video.videoId || getYouTubeId(url);
-  const type = video_id ? "video" : (video.type || "general");
-  const title = video.title || "Başlıksız Link";
-  const source_name = video.source_name || video.author_name || "Bilinmeyen Kaynak";
+  const url = video.url || video.metadata?.url || "";
+  const video_id = video.video_id || video.videoId || video.metadata?.video_id || getYouTubeId(url);
+  const type = video_id ? "video" : (video.type || video.metadata?.type || "general");
+  const title = video.title || video.metadata?.title || (video_id ? "YouTube Videosu" : "Başlıksız Link");
+  const source_name = video.source_name || video.author_name || video.metadata?.source_name || (video_id ? "YouTube" : "Bilinmeyen Kaynak");
   const is_clean = video.is_clean !== undefined ? video.is_clean : video.is_watched;
-  const duration = video.duration || "0:00";
+  
   const metadata = video.metadata || {};
-  const thumbnail_url = metadata.thumbnail_url;
-  const description = metadata.description;
-  const read_time = metadata.read_time;
-  const language = metadata.language;
-  const stars = metadata.stars;
+  const duration = (video.duration && video.duration !== "0:00") 
+    ? video.duration 
+    : (metadata.duration && metadata.duration !== "0:00") 
+    ? metadata.duration 
+    : null;
+
+  const thumbnail_url = metadata.thumbnail_url || (video_id ? `https://img.youtube.com/vi/${video_id}/hqdefault.jpg` : null);
+  const description = metadata.description || video.description || "";
+  const read_time = metadata.read_time || video.read_time;
+  const language = metadata.language || video.language;
+  const stars = metadata.stars !== undefined ? metadata.stars : video.stars;
 
   // Format date in Turkish
   const formatTimeAgo = (dateString) => {
@@ -42,6 +48,7 @@ export default function ContentCard({
     const now = new Date();
     const past = new Date(dateString);
     const diffMs = now - past;
+    if (isNaN(diffMs)) return "şimdi";
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return "şimdi";
     if (diffMins < 60) return `${diffMins} dk önce`;
@@ -136,7 +143,7 @@ export default function ContentCard({
               {language}
             </span>
           )}
-          {type === "video" && duration && duration !== "0:00" && (
+          {type === "video" && duration && (
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-rose-400" />
               <span>{duration}</span>
@@ -185,6 +192,12 @@ export default function ContentCard({
                     <Play className="h-7 w-7 text-white fill-white ml-1" />
                   </button>
                 </div>
+                {duration && (
+                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-white/10 backdrop-blur-md text-xs font-bold text-white shadow-lg pointer-events-none z-10">
+                    <Clock className="h-3.5 w-3.5 text-rose-400" />
+                    <span>{duration}</span>
+                  </div>
+                )}
               </div>
             )
           ) : (
@@ -225,16 +238,22 @@ export default function ContentCard({
       {/* Card Info Section - Title & Description */}
       <div className="flex-1 flex flex-col p-5 sm:p-6 justify-between gap-3 bg-zinc-900/20">
         <div className="flex flex-col gap-2">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group/title inline-block"
-          >
-            <h2 className="text-base sm:text-lg font-bold text-zinc-100 leading-snug tracking-tight group-hover/title:text-violet-300 transition-colors line-clamp-2">
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group/title inline-block"
+            >
+              <h2 className="text-base sm:text-lg font-bold text-zinc-100 leading-snug tracking-tight group-hover/title:text-violet-300 transition-colors line-clamp-2">
+                {title}
+              </h2>
+            </a>
+          ) : (
+            <h2 className="text-base sm:text-lg font-bold text-zinc-100 leading-snug tracking-tight line-clamp-2">
               {title}
             </h2>
-          </a>
+          )}
           {description && (
             <p className="text-xs sm:text-sm text-zinc-400 line-clamp-2 leading-relaxed">
               {description}
@@ -261,7 +280,7 @@ export default function ContentCard({
         )}
 
         {/* Fallback detail URL for general links */}
-        {type === "general" && !thumbnail_url && (
+        {type === "general" && !thumbnail_url && url && (
           <div className="text-xs text-zinc-500 font-semibold truncate flex items-center gap-1.5 pt-1">
             <Globe className="h-3.5 w-3.5 text-zinc-500" />
             <a href={url} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{url}</a>
