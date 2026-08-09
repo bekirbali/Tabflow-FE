@@ -107,36 +107,65 @@ export async function GET(request) {
           metadata.video_id = video_id;
           metadata.thumbnail_url = `https://img.youtube.com/vi/${video_id}/hqdefault.jpg`;
           
-          // Fetch oEmbed details and watch HTML page in parallel
-          try {
-            const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-            const watchUrl = `https://www.youtube.com/watch?v=${video_id}`;
-            
-            const [oembedRes, watchRes] = await Promise.all([
-              fetch(oembedUrl).catch(() => null),
-              fetch(watchUrl, {
-                headers: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                  "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+          let fetchedViaApi = false;
+          const apiKey = process.env.YOUTUBE_API_KEY;
+          
+          if (apiKey && apiKey !== "YOUR_YOUTUBE_API_KEY") {
+            try {
+              const apiRes = await fetch(
+                `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${video_id}&key=${apiKey}`
+              ).catch(() => null);
+              
+              if (apiRes && apiRes.ok) {
+                const apiData = await apiRes.json();
+                if (apiData && apiData.items && apiData.items.length > 0) {
+                  const item = apiData.items[0];
+                  title = item.snippet?.title || title;
+                  source_name = item.snippet?.channelTitle || source_name;
+                  const seconds = parseISO8601Duration(item.contentDetails?.duration);
+                  if (seconds) {
+                    metadata.duration = formatDuration(seconds);
+                  }
+                  fetchedViaApi = true;
                 }
-              }).catch(() => null)
-            ]);
-
-            if (oembedRes && oembedRes.ok) {
-              const oembedData = await oembedRes.json();
-              title = oembedData.title || title;
-              source_name = oembedData.author_name || source_name;
-            }
-
-            if (watchRes && watchRes.ok) {
-              const watchHtml = await watchRes.text();
-              const duration = extractYouTubeDuration(watchHtml);
-              if (duration) {
-                metadata.duration = duration;
               }
+            } catch (err) {
+              console.error("YouTube API request failed, falling back to scraping:", err);
             }
-          } catch (e) {
-            console.error("YouTube oEmbed/Watch fail:", e);
+          }
+          
+          // Fallback to oEmbed and watch page scraping if API key is not present or failed
+          if (!fetchedViaApi) {
+            try {
+              const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+              const watchUrl = `https://www.youtube.com/watch?v=${video_id}`;
+              
+              const [oembedRes, watchRes] = await Promise.all([
+                fetch(oembedUrl).catch(() => null),
+                fetch(watchUrl, {
+                  headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                  }
+                }).catch(() => null)
+              ]);
+
+              if (oembedRes && oembedRes.ok) {
+                const oembedData = await oembedRes.json();
+                title = oembedData.title || title;
+                source_name = oembedData.author_name || source_name;
+              }
+
+              if (watchRes && watchRes.ok) {
+                const watchHtml = await watchRes.text();
+                const duration = extractYouTubeDuration(watchHtml);
+                if (duration) {
+                  metadata.duration = duration;
+                }
+              }
+            } catch (e) {
+              console.error("YouTube oEmbed/Watch fail:", e);
+            }
           }
         }
       }
