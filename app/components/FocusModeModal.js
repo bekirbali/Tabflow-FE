@@ -220,7 +220,7 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
                   </p>
                   {description && (
                     <p className="text-zinc-500 text-xs italic max-w-md mb-6 leading-relaxed">
-                      "{description}"
+                      &ldquo;{description}&rdquo;
                     </p>
                   )}
                   <a
@@ -303,7 +303,7 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
                     className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-xs font-bold text-white bg-gradient-to-tr from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 transition-all active:scale-98"
                   >
                     <Code className="h-4 w-4" />
-                    <span>Kodları GitHub'da İncele</span>
+                    <span>Kodları GitHub&apos;da İncele</span>
                   </a>
                   {source_name === "GitHub" && (
                     <a

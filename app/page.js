@@ -33,18 +33,22 @@ export default function Home() {
 
   // Sync with LocalStorage/Backend after mounting
   useEffect(() => {
-    setIsMounted(true);
-    const currentUser = api.getCurrentUser();
-    if (currentUser) {
-      setUser(currentUser);
-      fetchCloudVideos();
-    } else {
-      loadLocalVideos();
-    }
+    // Defer state updates to avoid synchronous cascading renders during mount
+    setTimeout(() => {
+      setIsMounted(true);
+      const currentUser = api.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        fetchCloudVideos();
+      } else {
+        loadLocalVideos();
+      }
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch from Django Cloud Database
-  const fetchCloudVideos = async () => {
+  async function fetchCloudVideos() {
     try {
       const data = await api.getLinks();
       const mapped = data.map((v) => {
@@ -74,10 +78,10 @@ export default function Home() {
       addToast("Bulut verileri alınamadı, çevrimdışı mod kullanılıyor.", "error");
       loadLocalVideos();
     }
-  };
+  }
 
   // Load from LocalStorage if offline
-  const loadLocalVideos = () => {
+  function loadLocalVideos() {
     const stored = localStorage.getItem("tabflow_videos");
     if (stored) {
       try {
@@ -93,16 +97,16 @@ export default function Home() {
       setVideos(initial);
       localStorage.setItem("tabflow_videos", JSON.stringify(initial));
     }
-  };
+  }
 
   // Toast helper
-  const addToast = (message, type = "success") => {
+  function addToast(message, type = "success") {
     const id = Date.now().toString() + Math.random().toString().substring(2, 6);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
-  };
+  }
 
   // Calculate filtered lists based on active tab
   const filteredVideos = useMemo(() => {
@@ -115,86 +119,7 @@ export default function Home() {
     return [];
   }, [videos, activeTab]);
 
-  // Reset keyboard focus whenever tab changes
-  useEffect(() => {
-    setFocusedIndex(-1);
-  }, [activeTab]);
 
-  // Keyboard navigation event listener
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const handleGlobalKeyDown = (e) => {
-      // Ignore key events if the user is typing in inputs / forms
-      const activeEl = document.activeElement;
-      if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
-        return;
-      }
-
-      const key = e.key.toLowerCase();
-
-      // Avoid interference when Focus Mode modal is open
-      if (isFocusOpen) {
-        if (key === "escape") {
-          setIsFocusOpen(false);
-          setSelectedFocusLink(null);
-        }
-        return;
-      }
-
-      // J: Navigate Down
-      if (key === "j") {
-        e.preventDefault();
-        if (filteredVideos.length === 0) return;
-        setFocusedIndex((prev) => {
-          const nextIndex = prev + 1 >= filteredVideos.length ? 0 : prev + 1;
-          scrollCardIntoView(filteredVideos[nextIndex]?.id);
-          return nextIndex;
-        });
-      }
-      
-      // K: Navigate Up
-      else if (key === "k") {
-        e.preventDefault();
-        if (filteredVideos.length === 0) return;
-        setFocusedIndex((prev) => {
-          const nextIndex = prev - 1 < 0 ? filteredVideos.length - 1 : prev - 1;
-          scrollCardIntoView(filteredVideos[nextIndex]?.id);
-          return nextIndex;
-        });
-      }
-
-      // W: Mark active as clean/archive
-      else if (key === "w") {
-        e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
-          const activeCard = filteredVideos[focusedIndex];
-          handleActionVideo(activeCard.id);
-        }
-      }
-
-      // Z: Undo last action
-      else if (key === "z") {
-        e.preventDefault();
-        handleUndo();
-      }
-
-      // Enter: Focus mode
-      else if (e.key === "Enter") {
-        e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
-          const activeCard = filteredVideos[focusedIndex];
-          setSelectedFocusLink(activeCard);
-          setIsFocusOpen(true);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleGlobalKeyDown);
-    };
-  }, [isMounted, filteredVideos, focusedIndex, isFocusOpen]);
 
   // Helper to scroll active card element into view
   const scrollCardIntoView = (id) => {
@@ -479,6 +404,83 @@ export default function Home() {
     addToast("Oturum kapatıldı, yerel listeye dönüldü.", "success");
   };
 
+  // Keyboard navigation event listener
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const handleGlobalKeyDown = (e) => {
+      // Ignore key events if the user is typing in inputs / forms
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      // Avoid interference when Focus Mode modal is open
+      if (isFocusOpen) {
+        if (key === "escape") {
+          setIsFocusOpen(false);
+          setSelectedFocusLink(null);
+        }
+        return;
+      }
+
+      // J: Navigate Down
+      if (key === "j") {
+        e.preventDefault();
+        if (filteredVideos.length === 0) return;
+        setFocusedIndex((prev) => {
+          const nextIndex = prev + 1 >= filteredVideos.length ? 0 : prev + 1;
+          scrollCardIntoView(filteredVideos[nextIndex]?.id);
+          return nextIndex;
+        });
+      }
+      
+      // K: Navigate Up
+      else if (key === "k") {
+        e.preventDefault();
+        if (filteredVideos.length === 0) return;
+        setFocusedIndex((prev) => {
+          const nextIndex = prev - 1 < 0 ? filteredVideos.length - 1 : prev - 1;
+          scrollCardIntoView(filteredVideos[nextIndex]?.id);
+          return nextIndex;
+        });
+      }
+
+      // W: Mark active as clean/archive
+      else if (key === "w") {
+        e.preventDefault();
+        if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
+          const activeCard = filteredVideos[focusedIndex];
+          handleActionVideo(activeCard.id);
+        }
+      }
+
+      // Z: Undo last action
+      else if (key === "z") {
+        e.preventDefault();
+        handleUndo();
+      }
+
+      // Enter: Focus mode
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
+          const activeCard = filteredVideos[focusedIndex];
+          setSelectedFocusLink(activeCard);
+          setIsFocusOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted, filteredVideos, focusedIndex, isFocusOpen]);
+
   const pendingCount = useMemo(() => {
     return videos.filter((v) => !(v.is_clean || v.is_watched)).length;
   }, [videos]);
@@ -513,7 +515,10 @@ export default function Home() {
         <div className="flex justify-center mt-2">
           <nav className="flex p-1.5 bg-zinc-900/60 backdrop-blur-xl border border-white/5 rounded-2xl shadow-lg">
             <button
-              onClick={() => setActiveTab("feed")}
+              onClick={() => {
+                setActiveTab("feed");
+                setFocusedIndex(-1);
+              }}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 cursor-pointer ${
                 activeTab === "feed"
                   ? "bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-600/20"
@@ -532,7 +537,10 @@ export default function Home() {
             </button>
 
             <button
-              onClick={() => setActiveTab("watched")}
+              onClick={() => {
+                setActiveTab("watched");
+                setFocusedIndex(-1);
+              }}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 cursor-pointer ${
                 activeTab === "watched"
                   ? "bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-600/20"

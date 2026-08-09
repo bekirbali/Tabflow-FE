@@ -47,7 +47,7 @@ export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick 
             {user ? (
               <div className="flex items-center gap-2 bg-zinc-950/30 px-3 py-1.5 border border-white/5 rounded-xl text-xs text-zinc-300 font-medium">
                 <span className="max-w-[120px] truncate text-zinc-400 font-semibold">
-                  {user.username || user.email}
+                  {user.username || (user.email ? user.email.split("@")[0] : "")}
                 </span>
                 <span className="text-zinc-700">|</span>
                 <button
