@@ -5,6 +5,7 @@ import { Inbox, Archive, Check, AlertCircle, AlertTriangle, HelpCircle } from "l
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
 import ContentCard from "./components/ContentCard";
+import SkeletonCard from "./components/SkeletonCard";
 import FocusModeModal from "./components/FocusModeModal";
 import AuthModal from "./components/AuthModal";
 import { api } from "./utils/api";
@@ -18,6 +19,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("feed"); // "feed" | "watched"
   const [toasts, setToasts] = useState([]);
   const [isMounted, setIsMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Auth state
   const [user, setUser] = useState(null);
@@ -67,6 +69,7 @@ export default function Home() {
 
   // Fetch from Django Cloud Database
   async function fetchCloudVideos() {
+    setIsLoading(true);
     try {
       const data = await api.getLinks();
       const mapped = data.map((v) => {
@@ -95,6 +98,8 @@ export default function Home() {
       console.error("Cloud links fetch error:", err);
       addToast("Bulut verileri alınamadı, çevrimdışı mod kullanılıyor.", "error");
       loadLocalVideos();
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -115,6 +120,7 @@ export default function Home() {
       setVideos(initial);
       localStorage.setItem("tabflow_videos", JSON.stringify(initial));
     }
+    setIsLoading(false);
   }
 
   // Toast helper
@@ -575,7 +581,14 @@ export default function Home() {
         <main className="mt-2">
           {/* Inbox Feed and Archive Feed */}
           <div className="animate-fadeIn max-w-2xl mx-auto w-full">
-            {filteredVideos.length > 0 ? (
+            {isLoading ? (
+              // Skeleton loading cards
+              <div className="flex flex-col gap-6">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            ) : filteredVideos.length > 0 ? (
               <div className="flex flex-col gap-6">
                 {filteredVideos.map((video, idx) => (
                   <div id={`card-${video.id}`} key={video.id}>
