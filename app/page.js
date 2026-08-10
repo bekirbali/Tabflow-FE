@@ -47,6 +47,24 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Extension'dan link eklenince otomatik yenile
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleExtensionMessage = (event) => {
+      if (event.data && event.data.action === "tabflow_link_added") {
+        const currentUser = api.getCurrentUser();
+        if (currentUser) {
+          setTimeout(() => fetchCloudVideos(), 300);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleExtensionMessage);
+    return () => window.removeEventListener("message", handleExtensionMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Fetch from Django Cloud Database
   async function fetchCloudVideos() {
     try {
