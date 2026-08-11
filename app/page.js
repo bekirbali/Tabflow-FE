@@ -49,54 +49,21 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Extension'dan link eklenince otomatik yenile
+  // Sekmeye her dönüşte akışı yenile (extension ile eklenen videolar dahil)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // 1) postMessage yoluyla bridge'den gelen mesajı dinle
-    const handleExtensionMessage = (event) => {
-      if (event.data && event.data.action === "tabflow_link_added") {
-        const currentUser = api.getCurrentUser();
-        if (currentUser) {
-          setTimeout(() => fetchCloudVideos(), 300);
-        }
-      }
-    };
-
-    // 2) localStorage değişikliği (extension popup aynı origin'de değil ama
-    //    tabflow_bridge.js aynı sayfa origin'inde çalışır ve localStorage'ı kullanabilir)
-    const handleStorageEvent = (event) => {
-      if (event.key === "tabflow_new_link_signal") {
-        const currentUser = api.getCurrentUser();
-        if (currentUser) {
-          setTimeout(() => fetchCloudVideos(), 300);
-        }
-      }
-    };
-
-    // 3) Kullanıcı başka sekmeden dönünce (extension popup'ı kapatıp TabFlow'a geçince)
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        const signal = localStorage.getItem("tabflow_new_link_signal");
-        if (signal) {
-          localStorage.removeItem("tabflow_new_link_signal");
-          const currentUser = api.getCurrentUser();
-          if (currentUser) {
-            setTimeout(() => fetchCloudVideos(), 200);
-          }
+        const currentUser = api.getCurrentUser();
+        if (currentUser) {
+          fetchCloudVideos();
         }
       }
     };
 
-    window.addEventListener("message", handleExtensionMessage);
-    window.addEventListener("storage", handleStorageEvent);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("message", handleExtensionMessage);
-      window.removeEventListener("storage", handleStorageEvent);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
