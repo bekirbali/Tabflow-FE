@@ -49,7 +49,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sekmeye her dönüşte akışı yenile (extension ile eklenen videolar dahil)
+  // Sekmeye her dönüşte arka planda sessizce yenile (extension ile eklenen videolar dahil)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -57,7 +57,7 @@ export default function Home() {
       if (document.visibilityState === "visible") {
         const currentUser = api.getCurrentUser();
         if (currentUser) {
-          fetchCloudVideos();
+          silentRefreshVideos();
         }
       }
     };
@@ -100,6 +100,44 @@ export default function Home() {
       loadLocalVideos();
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  // Arka planda sessizce yenile — yükleme göstergesi olmadan sadece yeni videoları ekler
+  async function silentRefreshVideos() {
+    try {
+      const data = await api.getLinks();
+      const mapped = data.map((v) => {
+        const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
+        return {
+          id: v.id,
+          videoId: ytId,
+          video_id: ytId,
+          url: v.url,
+          type: ytId ? "video" : (v.type || "general"),
+          title: v.title,
+          source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
+          is_clean: v.is_clean || v.is_watched || false,
+          is_watched: v.is_clean || v.is_watched || false,
+          liked: v.liked,
+          bookmarked: v.bookmarked,
+          duration: v.duration,
+          metadata: v.metadata || {},
+          curator: v.curator,
+          category: v.category,
+          created_at: v.created_at
+        };
+      });
+      // Mevcut listeyle karşılaştır, sadece yeni ID'leri öne ekle
+      setVideos((prev) => {
+        const existingIds = new Set(prev.map((v) => v.id));
+        const newItems = mapped.filter((v) => !existingIds.has(v.id));
+        if (newItems.length === 0) return prev; // Değişiklik yoksa state'i tetikleme
+        return [...newItems, ...prev];
+      });
+    } catch (err) {
+      // Sessiz hata — kullanıcıya toast gösterme
+      console.warn("Silent refresh failed:", err);
     }
   }
 
