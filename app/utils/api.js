@@ -81,6 +81,22 @@ export const api = {
     return null;
   },
 
+  /**
+   * Gizli sekme unlock: mevcut oturumu bozmadan sadece şifre doğrular.
+   * Returns true if password is correct, false otherwise.
+   */
+  async verifyPassword(password) {
+    try {
+      const data = await request("/auth/verify-password/", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+      return data.valid === true;
+    } catch {
+      return false;
+    }
+  },
+
   // Links CRUD
   async getLinks() {
     return request("/links/");
@@ -96,6 +112,7 @@ export const api = {
       is_clean: linkData.is_clean || linkData.is_watched || false,
       liked: linkData.liked || false,
       bookmarked: linkData.bookmarked || false,
+      is_private: linkData.is_private || false,
       duration: linkData.duration || "0:00",
       metadata: linkData.metadata || {},
       curator: linkData.curator || "@feed_master",

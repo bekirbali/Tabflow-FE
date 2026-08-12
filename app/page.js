@@ -16,7 +16,8 @@ import {
 
 export default function Home() {
   const [videos, setVideos] = useState([]); // Represents our links/tabs stream
-  const [activeTab, setActiveTab] = useState("feed"); // "feed" | "watched"
+  const [activeTab, setActiveTab] = useState("feed"); // "feed" | "watched" | "private"
+  const [isPrivateUnlocked, setIsPrivateUnlocked] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +36,24 @@ export default function Home() {
 
   // Keyboard shortcuts helper visibility
   const [showKeyboardHelper, setShowKeyboardHelper] = useState(false);
+
+  // Secret / Private tab unlock handler
+  const handleSecretUnlock = async (password) => {
+    if (!user) {
+      addToast("Ğifreli giriş için önce oturum açmanız gerekiyor.", "warning");
+      return false;
+    }
+    const ok = await api.verifyPassword(password);
+    if (ok) {
+      setIsPrivateUnlocked(true);
+      setActiveTab("private");
+      setFocusedIndex(-1);
+      addToast("🔒 Gizli akış açıldı.", "success");
+    } else {
+      addToast("Şifre hatalı. Gizli akışa giriş reddedildi.", "error");
+    }
+    return ok;
+  };
 
   // Sync with LocalStorage/Backend after mounting
   useEffect(() => {
@@ -89,6 +108,7 @@ export default function Home() {
           is_watched: v.is_clean || v.is_watched || false, // compatibility fallback
           liked: v.liked,
           bookmarked: v.bookmarked,
+          is_private: v.is_private || false,
           duration: v.duration,
           metadata: v.metadata || {},
           curator: v.curator,
@@ -124,6 +144,7 @@ export default function Home() {
           is_watched: v.is_clean || v.is_watched || false,
           liked: v.liked,
           bookmarked: v.bookmarked,
+          is_private: v.is_private || false,
           duration: v.duration,
           metadata: v.metadata || {},
           curator: v.curator,
@@ -176,10 +197,13 @@ export default function Home() {
   // Calculate filtered lists based on active tab
   const filteredVideos = useMemo(() => {
     if (activeTab === "feed") {
-      return videos.filter((v) => !(v.is_clean || v.is_watched));
+      return videos.filter((v) => !(v.is_clean || v.is_watched) && !v.is_private);
     }
     if (activeTab === "watched") {
-      return videos.filter((v) => (v.is_clean || v.is_watched));
+      return videos.filter((v) => (v.is_clean || v.is_watched) && !v.is_private);
+    }
+    if (activeTab === "private") {
+      return videos.filter((v) => v.is_private);
     }
     return [];
   }, [videos, activeTab]);
@@ -214,6 +238,7 @@ export default function Home() {
       is_clean: false,
       liked: false,
       bookmarked: false,
+      is_private: activeTab === "private", // private moddaysa gizli olarak kaydet
       curator: "@feed_master",
       duration: linkPayload.duration || "0:00",
       category: "Tech",
@@ -233,6 +258,7 @@ export default function Home() {
           is_clean: newLink.is_clean,
           liked: newLink.liked,
           bookmarked: newLink.bookmarked,
+          is_private: newLink.is_private || false,
           duration: newLink.duration,
           metadata: newLink.metadata || {},
           curator: newLink.curator,
@@ -576,7 +602,7 @@ export default function Home() {
         />
 
         {/* Input paste link bar */}
-        <AddLinkBar onAddLink={handleAddLink} addToast={addToast} />
+        <AddLinkBar onAddLink={handleAddLink} addToast={addToast} onSecretUnlock={user ? handleSecretUnlock : null} />
 
         {/* Navigation Switcher Tabs */}
         <div className="flex justify-center mt-2">
@@ -617,6 +643,49 @@ export default function Home() {
               <Archive className="h-4 w-4" />
               <span>Watched</span>
             </button>
+
+            {/* Private tab — only visible when unlocked */}
+            {isPrivateUnlocked && (
+              <div
+                className={`flex items-center gap-1 rounded-xl transition-all duration-300 ${
+                  activeTab === "private"
+                    ? "bg-gradient-to-tr from-rose-600/80 to-violet-700 shadow-md shadow-rose-600/20"
+                    : ""
+                }`}
+              >
+                <button
+                  onClick={() => {
+                    setActiveTab("private");
+                    setFocusedIndex(-1);
+                  }}
+                  className={`flex items-center gap-2 pl-4 pr-2 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 cursor-pointer ${
+                    activeTab === "private"
+                      ? "text-white"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  <span className="text-[13px]">🔒</span>
+                  <span>Gizli</span>
+                </button>
+                {/* Lock / close button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsPrivateUnlocked(false);
+                    setActiveTab("feed");
+                    setFocusedIndex(-1);
+                  }}
+                  title="Gizli akışı kilitle"
+                  className={`mr-1.5 flex items-center justify-center h-5 w-5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${
+                    activeTab === "private"
+                      ? "text-white/60 hover:text-white hover:bg-white/10"
+                      : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800"
+                  }`}
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </nav>
         </div>
 
