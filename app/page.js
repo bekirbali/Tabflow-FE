@@ -33,6 +33,9 @@ export default function Home() {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [undoStack, setUndoStack] = useState([]);
 
+  // Keyboard shortcuts helper visibility
+  const [showKeyboardHelper, setShowKeyboardHelper] = useState(false);
+
   // Sync with LocalStorage/Backend after mounting
   useEffect(() => {
     // Defer state updates to avoid synchronous cascading renders during mount
@@ -567,7 +570,9 @@ export default function Home() {
           videos={videos} 
           user={user} 
           onLoginClick={() => setIsAuthModalOpen(true)} 
-          onLogoutClick={handleLogout} 
+          onLogoutClick={handleLogout}
+          showKeyboardHelper={showKeyboardHelper}
+          onToggleKeyboardHelper={() => setShowKeyboardHelper((v) => !v)}
         />
 
         {/* Input paste link bar */}
@@ -680,8 +685,14 @@ export default function Home() {
         </main>
       </div>
 
-      {/* Floating Keyboard Shortcuts Helper overlay - PREMIUM UI design */}
-      <div className="fixed bottom-6 left-6 z-40 bg-zinc-900/90 border border-white/10 p-3 px-4 rounded-2xl shadow-2xl backdrop-blur-md hidden md:flex items-center gap-4 text-xs text-zinc-400 font-semibold select-none">
+      {/* Floating Keyboard Shortcuts Helper overlay - toggled by StatsHeader button */}
+      <div
+        className={`fixed bottom-6 left-6 z-40 bg-zinc-900/90 border border-white/10 p-3 px-4 rounded-2xl shadow-2xl backdrop-blur-md hidden md:flex items-center gap-4 text-xs text-zinc-400 font-semibold select-none transition-all duration-300 ${
+          showKeyboardHelper
+            ? "opacity-100 translate-y-0 pointer-events-auto"
+            : "opacity-0 translate-y-3 pointer-events-none"
+        }`}
+      >
         <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Klavye</span>
         <span className="h-4 w-[1px] bg-zinc-800" />
         <div className="flex items-center gap-1.5">

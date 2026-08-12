@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Inbox, Archive, Heart, Layers, User, LogOut, Key, Copy, Check } from "lucide-react";
+import { Inbox, Archive, Heart, Layers, User, LogOut, Key, Copy, Check, Keyboard } from "lucide-react";
 
-export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick }) {
+export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick, showKeyboardHelper, onToggleKeyboardHelper }) {
   const [copied, setCopied] = useState(false);
   const total = videos.length;
   // Handle both is_clean and is_watched for backend/frontend compatibility
@@ -39,6 +39,22 @@ export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick 
               </span>
             </div>
           </div>
+
+          <div className="h-4 w-[1px] bg-zinc-800 hidden md:block" />
+
+          {/* Keyboard Shortcuts Toggle Button */}
+          <button
+            onClick={onToggleKeyboardHelper}
+            title={showKeyboardHelper ? "Klavye kısa yollarını gizle" : "Klavye kısa yollarını göster"}
+            className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all duration-200 cursor-pointer active:scale-95 ${
+              showKeyboardHelper
+                ? "bg-violet-600/20 border-violet-500/30 text-violet-300 shadow-sm shadow-violet-500/10"
+                : "bg-zinc-950/30 border-white/5 text-zinc-500 hover:text-zinc-300 hover:border-white/10"
+            }`}
+          >
+            <Keyboard className="h-3.5 w-3.5" />
+            <span>Kısa Yollar</span>
+          </button>
 
           <div className="h-4 w-[1px] bg-zinc-800 hidden md:block" />
 
