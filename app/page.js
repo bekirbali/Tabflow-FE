@@ -98,7 +98,8 @@ export default function Home() {
       addToast("YouTube bağlantısı iptal edildi.", "warning");
       window.history.replaceState({}, document.title, "/");
     } else if (ytAuth === "error") {
-      addToast("YouTube bağlanmasında hata oluştu.", "error");
+      const errDetail = params.get("yt_err_msg");
+      addToast(`YouTube bağlanmasında hata oluştu: ${errDetail ? decodeURIComponent(errDetail) : "Bilinmeyen hata"}`, "error");
       window.history.replaceState({}, document.title, "/");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -41,7 +41,8 @@ export async function GET(request) {
 
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error("Token exchange failed:", tokenData);
-      return NextResponse.redirect(`${siteUrl}/?yt_auth=error`);
+      const errMsg = encodeURIComponent(tokenData.error_description || tokenData.error || "token_exchange_failed");
+      return NextResponse.redirect(`${siteUrl}/?yt_auth=error&yt_err_msg=${errMsg}`);
     }
 
     // Token bilgilerini URL param olarak ana sayfaya gönder
