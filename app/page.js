@@ -13,6 +13,12 @@ import {
   getInitialSeedVideos,
   getYouTubeId,
 } from "./utils/youtube";
+import {
+  saveYouTubeTokens,
+  isYouTubeConnected,
+  rateVideoOnYouTube,
+  toggleWatchLater,
+} from "./utils/youtube-auth";
 
 export default function Home() {
   const [videos, setVideos] = useState([]); // Represents our links/tabs stream
@@ -68,6 +74,33 @@ export default function Home() {
         loadLocalVideos();
       }
     }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // YouTube OAuth callback: URL param'lardan token'ları yakala ve temizle
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ytAuth = params.get("yt_auth");
+
+    if (ytAuth === "success") {
+      const accessToken = params.get("yt_access_token");
+      const refreshToken = params.get("yt_refresh_token");
+      const expiresIn = params.get("yt_expires_in") || "3600";
+
+      if (accessToken) {
+        saveYouTubeTokens({ accessToken, refreshToken, expiresIn });
+        addToast("YouTube hesabı başarıyla bağlandı! ▶️", "success");
+      }
+      // URL'yi temizle (token'ları adres çubuğunda gösterme)
+      window.history.replaceState({}, document.title, "/");
+    } else if (ytAuth === "denied") {
+      addToast("YouTube bağlantısı iptal edildi.", "warning");
+      window.history.replaceState({}, document.title, "/");
+    } else if (ytAuth === "error") {
+      addToast("YouTube bağlanmasında hata oluştu.", "error");
+      window.history.replaceState({}, document.title, "/");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -318,6 +351,20 @@ export default function Home() {
       localStorage.setItem("tabflow_videos", JSON.stringify(updated));
       addToast(newLiked ? "Beğenildi! ❤️" : "Beğeni geri alındı.", "success");
     }
+
+    // YouTube entegrasyonu: bağlıysa ve video ise YouTube'da da beğen
+    const videoId = item.video_id || item.videoId;
+    if (videoId && isYouTubeConnected()) {
+      const ytResult = await rateVideoOnYouTube(videoId, newLiked ? "like" : "none");
+      if (ytResult?.success) {
+        addToast(
+          newLiked ? "YouTube'da da beğenildi ▶️❤️" : "YouTube beğenisi de kaldırıldı.",
+          "success"
+        );
+      } else if (ytResult?.needsReconnect) {
+        addToast("YouTube bağlantısı sona erdi. Lütfen tekrar bağlan.", "warning");
+      }
+    }
   };
 
   // Bookmark Link Handler
@@ -343,6 +390,22 @@ export default function Home() {
     } else {
       localStorage.setItem("tabflow_videos", JSON.stringify(updated));
       addToast(newBookmarked ? "Yer imlerine eklendi! 🔖" : "Yer imi kaldırıldı.", "success");
+    }
+
+    // YouTube entegrasyonu: bağlıysa ve video ise "Daha Sonra İzle"ye ekle/çıkar
+    const videoId = item.video_id || item.videoId;
+    if (videoId && isYouTubeConnected()) {
+      const ytResult = await toggleWatchLater(videoId, newBookmarked ? "add" : "remove");
+      if (ytResult?.success) {
+        addToast(
+          newBookmarked
+            ? "YouTube 'Daha Sonra İzle' listesine eklendi! 🔖"
+            : "YouTube 'Daha Sonra İzle' listesinden çıkarıldı.",
+          "success"
+        );
+      } else if (ytResult?.needsReconnect) {
+        addToast("YouTube bağlantısı sona erdi. Lütfen tekrar bağlan.", "warning");
+      }
     }
   };
 

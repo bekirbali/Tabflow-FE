@@ -1,10 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
-import { Inbox, Archive, Heart, Layers, User, LogOut, Key, Copy, Check, Keyboard } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Inbox, Archive, Heart, Layers, User, LogOut, Key, Copy, Check, Keyboard, Play, Link2Off } from "lucide-react";
+import { isYouTubeConnected, clearYouTubeTokens } from "../utils/youtube-auth";
 
 export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick, showKeyboardHelper, onToggleKeyboardHelper }) {
   const [copied, setCopied] = useState(false);
+  const [ytConnected, setYtConnected] = useState(false);
+
+  useEffect(() => {
+    setYtConnected(isYouTubeConnected());
+  }, []);
+
+  const handleYouTubeConnect = () => {
+    window.location.href = "/api/youtube/auth";
+  };
+
+  const handleYouTubeDisconnect = () => {
+    clearYouTubeTokens();
+    setYtConnected(false);
+  };
   const total = videos.length;
   // Handle both is_clean and is_watched for backend/frontend compatibility
   const watched = videos.filter((v) => v.is_clean || v.is_watched).length;
@@ -55,6 +70,31 @@ export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick,
             <Keyboard className="h-3.5 w-3.5" />
             <span>Kısa Yollar</span>
           </button>
+
+          <div className="h-4 w-[1px] bg-zinc-800 hidden md:block" />
+
+          {/* YouTube Bağlantı Butonu */}
+          {ytConnected ? (
+            <button
+              onClick={handleYouTubeDisconnect}
+              title="YouTube bağlantısını kes"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-[11px] font-semibold transition-all duration-200 cursor-pointer active:scale-95 hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-400 group"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span className="group-hover:hidden">YT Bağlı ✓</span>
+              <span className="hidden group-hover:inline">Bağlantıyı Kes</span>
+              <Link2Off className="h-3 w-3 hidden group-hover:inline" />
+            </button>
+          ) : (
+            <button
+              onClick={handleYouTubeConnect}
+              title="YouTube hesabını bağla"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 text-[11px] font-semibold transition-all duration-200 cursor-pointer active:scale-95 hover:bg-rose-500/20"
+            >
+              <Play className="h-3.5 w-3.5" />
+              <span>YouTube Bağla</span>
+            </button>
+          )}
 
           <div className="h-4 w-[1px] bg-zinc-800 hidden md:block" />
 
