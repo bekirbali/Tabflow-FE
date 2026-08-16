@@ -165,7 +165,7 @@ export default function ContentCard({
           {type === "video" && video_id ? (
             isPlaying ? (
               <iframe
-                src={`https://www.youtube-nocookie.com/embed/${video_id}?autoplay=1&rel=0`}
+                src={`https://www.${activeTab === "private" ? "youtube-nocookie" : "youtube"}.com/embed/${video_id}?autoplay=1&rel=0`}
                 title={title}
                 className="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
