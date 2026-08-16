@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
  * GET /api/youtube/auth
  * Kullanıcıyı Google OAuth consent sayfasına yönlendirir.
  */
-export async function GET() {
+export async function GET(request) {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
 
   if (!clientId) {
@@ -14,7 +14,12 @@ export async function GET() {
     );
   }
 
-  const redirectUri = `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/api/youtube/callback`;
+  // Vercel / Production veya Localhost ortamına göre kök adresi belirle
+  const host = request.headers.get("host");
+  const protocol = request.headers.get("x-forwarded-proto") || (host?.includes("localhost") ? "http" : "https");
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || `${protocol}://${host}`;
+
+  const redirectUri = `${siteUrl}/api/youtube/callback`;
 
   const params = new URLSearchParams({
     client_id: clientId,

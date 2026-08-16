@@ -10,16 +10,18 @@ export async function GET(request) {
   const code = searchParams.get("code");
   const error = searchParams.get("error");
 
+  const host = request.headers.get("host");
+  const protocol = request.headers.get("x-forwarded-proto") || (host?.includes("localhost") ? "http" : "https");
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || `${protocol}://${host}`;
+
   // Kullanıcı izin vermedi
   if (error || !code) {
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/?yt_auth=denied`
-    );
+    return NextResponse.redirect(`${siteUrl}/?yt_auth=denied`);
   }
 
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  const redirectUri = `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/api/youtube/callback`;
+  const redirectUri = `${siteUrl}/api/youtube/callback`;
 
   try {
     // Code'u token'a çevir
@@ -39,9 +41,7 @@ export async function GET(request) {
 
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error("Token exchange failed:", tokenData);
-      return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/?yt_auth=error`
-      );
+      return NextResponse.redirect(`${siteUrl}/?yt_auth=error`);
     }
 
     // Token bilgilerini URL param olarak ana sayfaya gönder
@@ -53,13 +53,9 @@ export async function GET(request) {
       yt_expires_in: tokenData.expires_in?.toString() || "3600",
     });
 
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/?${params.toString()}`
-    );
+    return NextResponse.redirect(`${siteUrl}/?${params.toString()}`);
   } catch (err) {
     console.error("YouTube OAuth callback error:", err);
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/?yt_auth=error`
-    );
+    return NextResponse.redirect(`${siteUrl}/?yt_auth=error`);
   }
 }
