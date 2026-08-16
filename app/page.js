@@ -662,7 +662,7 @@ export default function Home() {
               }`}
             >
               <Heart className={`h-4 w-4 ${activeTab === "liked" ? "fill-white" : ""}`} />
-              <span>Beğendiklerim</span>
+              <span>Liked</span>
               {videos.filter((v) => v.liked && !v.is_private).length > 0 && (
                 <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   activeTab === "liked" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
@@ -684,7 +684,7 @@ export default function Home() {
               }`}
             >
               <Bookmark className={`h-4 w-4 ${activeTab === "saved" ? "fill-white" : ""}`} />
-              <span>Kaydettiklerim</span>
+              <span>Saved</span>
               {videos.filter((v) => v.bookmarked && !v.is_private).length > 0 && (
                 <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   activeTab === "saved" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
