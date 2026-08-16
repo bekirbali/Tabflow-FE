@@ -260,11 +260,45 @@ export default function Home() {
     }, 50);
   };
 
+  // Normalize a URL by stripping tracking/session params for comparison
+  const normalizeUrl = (rawUrl) => {
+    try {
+      const u = new URL(rawUrl);
+      // YouTube'da sadece video ID'yi tut, diğer parametreleri (t=, list=, si=...) at
+      if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
+        const v = u.searchParams.get("v");
+        if (v) return `youtube:${v}`;
+        // youtu.be/VIDEO_ID formatı
+        const pathId = u.pathname.replace("/", "").split("?")[0];
+        if (pathId.length === 11) return `youtube:${pathId}`;
+      }
+      // Diğer sitelerde hash ve bazı tracking param'ları at
+      u.hash = "";
+      ["utm_source", "utm_medium", "utm_campaign", "ref", "si"].forEach((p) =>
+        u.searchParams.delete(p)
+      );
+      return u.toString().replace(/\/$/, ""); // trailing slash kaldır
+    } catch {
+      return rawUrl;
+    }
+  };
+
   // Add Link Handler
   const handleAddLink = async (linkPayload) => {
-    const exists = videos.some((v) => v.url === linkPayload.url);
-    if (exists) {
-      addToast("Bu bağlantı zaten listenizde ekli!", "warning");
+    const incomingVideoId = linkPayload.video_id || null;
+    const incomingNorm = normalizeUrl(linkPayload.url);
+
+    const isDuplicate = videos.some((v) => {
+      // video_id bazlı kontrol (en güvenilir — farklı URL formatlarını yakalar)
+      if (incomingVideoId && (v.video_id || v.videoId)) {
+        return (v.video_id || v.videoId) === incomingVideoId;
+      }
+      // URL bazlı normalize kontrol
+      return normalizeUrl(v.url) === incomingNorm;
+    });
+
+    if (isDuplicate) {
+      addToast("Bu içerik zaten listenizde mevcut! 🔁", "warning");
       return;
     }
 
