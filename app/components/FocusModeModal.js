@@ -6,6 +6,7 @@ import {
   Star, GitFork, AlertCircle, Type, ZoomIn, ZoomOut 
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
+import YouTubeComments from "./YouTubeComments";
 
 export default function FocusModeModal({ video, isOpen, onClose }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
@@ -59,7 +60,9 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
     >
       {/* Modal Container */}
       <div 
-        className="relative w-full h-full md:h-[90vh] md:max-w-4xl bg-zinc-900 border-0 md:border border-white/10 rounded-none md:rounded-3xl flex flex-col overflow-hidden shadow-2xl shadow-violet-950/20 cursor-default"
+        className={`relative w-full h-full md:h-[90vh] bg-zinc-900 border-0 md:border border-white/10 rounded-none md:rounded-3xl flex flex-col overflow-hidden shadow-2xl shadow-violet-950/20 cursor-default transition-all duration-300 ${
+          type === "video" ? "md:max-w-6xl" : "md:max-w-4xl"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Bar */}
@@ -156,20 +159,35 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
         <div className="flex-1 overflow-y-auto bg-zinc-950/10">
           {/* 1. VIDEO VIEW */}
           {type === "video" && video_id && (
-            <div className="w-full h-full flex flex-col justify-center items-center bg-zinc-950 p-4 md:p-8">
-              <div className="w-full max-w-4xl aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/5">
-                <iframe
-                  src={`https://www.youtube.com/embed/${video_id}?autoplay=1`}
-                  title={title}
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                  className="w-full h-full"
-                />
+            <div className="w-full h-full flex flex-col lg:flex-row bg-zinc-950 overflow-hidden">
+              {/* Left Side: Video Player & Description */}
+              <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto custom-scrollbar">
+                <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black shrink-0">
+                  <iframe
+                    src={`https://www.youtube.com/embed/${video_id}?autoplay=1`}
+                    title={title}
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    className="w-full h-full"
+                  />
+                </div>
+                <div className="mt-5 px-1">
+                  <h2 className="text-lg md:text-xl font-bold text-zinc-100 leading-snug">
+                    {title}
+                  </h2>
+                  {description && (
+                    <p className="text-xs md:text-sm text-zinc-400 mt-2.5 leading-relaxed bg-zinc-900/40 border border-white/5 rounded-2xl p-4">
+                      {description}
+                    </p>
+                  )}
+                </div>
               </div>
-              <h2 className="text-lg md:text-xl font-bold text-zinc-100 mt-6 text-center max-w-2xl px-4">
-                {title}
-              </h2>
+
+              {/* Right Side: YouTube Comments Panel */}
+              <div className="w-full lg:w-96 min-h-[380px] lg:min-h-0 lg:h-full shrink-0">
+                <YouTubeComments videoId={video_id} />
+              </div>
             </div>
           )}
 
