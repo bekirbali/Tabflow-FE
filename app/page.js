@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Inbox, Archive, Check, AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
+import { Inbox, Archive, Check, AlertCircle, AlertTriangle, HelpCircle, Heart, Bookmark } from "lucide-react";
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
 import ContentCard from "./components/ContentCard";
@@ -204,6 +204,12 @@ export default function Home() {
     }
     if (activeTab === "private") {
       return videos.filter((v) => v.is_private);
+    }
+    if (activeTab === "liked") {
+      return videos.filter((v) => v.liked && !v.is_private);
+    }
+    if (activeTab === "saved") {
+      return videos.filter((v) => v.bookmarked && !v.is_private);
     }
     return [];
   }, [videos, activeTab]);
@@ -644,6 +650,50 @@ export default function Home() {
               <span>Watched</span>
             </button>
 
+            <button
+              onClick={() => {
+                setActiveTab("liked");
+                setFocusedIndex(-1);
+              }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 cursor-pointer ${
+                activeTab === "liked"
+                  ? "bg-gradient-to-tr from-rose-600 to-pink-600 text-white shadow-md shadow-rose-600/20"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              <Heart className={`h-4 w-4 ${activeTab === "liked" ? "fill-white" : ""}`} />
+              <span>Beğendiklerim</span>
+              {videos.filter((v) => v.liked && !v.is_private).length > 0 && (
+                <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  activeTab === "liked" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
+                }`}>
+                  {videos.filter((v) => v.liked && !v.is_private).length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab("saved");
+                setFocusedIndex(-1);
+              }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 cursor-pointer ${
+                activeTab === "saved"
+                  ? "bg-gradient-to-tr from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              <Bookmark className={`h-4 w-4 ${activeTab === "saved" ? "fill-white" : ""}`} />
+              <span>Kaydettiklerim</span>
+              {videos.filter((v) => v.bookmarked && !v.is_private).length > 0 && (
+                <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  activeTab === "saved" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
+                }`}>
+                  {videos.filter((v) => v.bookmarked && !v.is_private).length}
+                </span>
+              )}
+            </button>
+
             {/* Private tab — only visible when unlocked */}
             {isPrivateUnlocked && (
               <div
@@ -733,6 +783,30 @@ export default function Home() {
                     </h3>
                     <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
                       İşlem bekleyen tüm bağlantıları tamamlayıp <strong>Inbox Zero</strong> başarısına ulaştınız. Zihniniz artık tertemiz! 🎉
+                    </p>
+                  </div>
+                ) : activeTab === "liked" ? (
+                  <div className="flex flex-col items-center max-w-md animate-fadeIn">
+                    <div className="h-16 w-16 bg-rose-500/10 border border-rose-500/20 rounded-full flex items-center justify-center mb-5 text-rose-400 shadow-xl shadow-rose-950/20">
+                      <Heart className="h-7 w-7" />
+                    </div>
+                    <h3 className="text-lg font-bold text-zinc-100">
+                      Henüz beğenilen içerik yok
+                    </h3>
+                    <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
+                      Kartların altındaki ❤️ butonuna basarak içerikleri beğenebilirsin.
+                    </p>
+                  </div>
+                ) : activeTab === "saved" ? (
+                  <div className="flex flex-col items-center max-w-md animate-fadeIn">
+                    <div className="h-16 w-16 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center mb-5 text-amber-400 shadow-xl shadow-amber-950/20">
+                      <Bookmark className="h-7 w-7" />
+                    </div>
+                    <h3 className="text-lg font-bold text-zinc-100">
+                      Henüz kaydedilen içerik yok
+                    </h3>
+                    <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
+                      Kartların altındaki 🔖 butonuna basarak içerikleri kaydedebilirsin.
                     </p>
                   </div>
                 ) : (
