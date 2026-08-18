@@ -28,11 +28,19 @@ export function clearYouTubeTokens() {
 export function isYouTubeConnected() {
   if (typeof window === "undefined") return false;
   const token = localStorage.getItem(YT_ACCESS_TOKEN_KEY);
+  const refreshToken = localStorage.getItem(YT_REFRESH_TOKEN_KEY);
+  
+  // Eğer hem access token hem refresh token yoksa bağlı değil
+  if (!token && !refreshToken) return false;
+
+  // Access token var ve süresi dolmadıysa doğrudan bağlıdır
   const expiresAt = localStorage.getItem(YT_EXPIRES_AT_KEY);
-  if (!token) return false;
-  // Token geçerli mi kontrol et
-  if (expiresAt && Date.now() > parseInt(expiresAt, 10)) return false;
-  return true;
+  if (token && expiresAt && Date.now() <= parseInt(expiresAt, 10)) {
+    return true;
+  }
+
+  // Access token dolmuş ama elimizde refresh token varsa yine bağlı kabul et (isteğe bağlı otomatik yenilenecek)
+  return !!refreshToken;
 }
 
 export function getYouTubeAccessToken() {
@@ -43,6 +51,30 @@ export function getYouTubeAccessToken() {
 export function getYouTubeRefreshToken() {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(YT_REFRESH_TOKEN_KEY);
+}
+
+/**
+ * Access token süresi dolmuşsa otomatik olarak refresh_token ile yeniler ve geçerli token döner.
+ */
+export async function getValidYouTubeAccessToken() {
+  if (typeof window === "undefined") return null;
+  
+  const token = localStorage.getItem(YT_ACCESS_TOKEN_KEY);
+  const expiresAt = localStorage.getItem(YT_EXPIRES_AT_KEY);
+  
+  // Eğer access token hâlâ geçerliyse direkt dön
+  if (token && expiresAt && Date.now() <= parseInt(expiresAt, 10)) {
+    return token;
+  }
+
+  // Süresi dolmuşsa refresh etmeyi dene
+  const refreshToken = getYouTubeRefreshToken();
+  if (refreshToken) {
+    const newToken = await refreshYouTubeToken();
+    if (newToken) return newToken;
+  }
+
+  return null;
 }
 
 // ─── Token Yenileme ────────────────────────────────────────────────────────────
@@ -85,7 +117,7 @@ export async function refreshYouTubeToken() {
  * @returns {{ success: boolean, error?: string, needsReconnect?: boolean }}
  */
 export async function rateVideoOnYouTube(videoId, rating) {
-  const accessToken = getYouTubeAccessToken();
+  const accessToken = await getValidYouTubeAccessToken();
   if (!accessToken) return { success: false, needsReconnect: true };
 
   try {
@@ -126,7 +158,7 @@ export async function rateVideoOnYouTube(videoId, rating) {
  * @returns {{ success: boolean, error?: string, needsReconnect?: boolean }}
  */
 export async function toggleWatchLater(videoId, action) {
-  const accessToken = getYouTubeAccessToken();
+  const accessToken = await getValidYouTubeAccessToken();
   if (!accessToken) return { success: false, needsReconnect: true };
 
   try {

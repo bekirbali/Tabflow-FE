@@ -16,6 +16,7 @@ import {
 import {
   saveYouTubeTokens,
   isYouTubeConnected,
+  getValidYouTubeAccessToken,
   rateVideoOnYouTube,
   toggleWatchLater,
 } from "./utils/youtube-auth";
@@ -105,7 +106,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sekmeye her dönüşte arka planda sessizce yenile (extension ile eklenen videolar dahil)
+  // Sekmeye her dönüşte arka planda sessizce yenile (extension ile eklenen videolar ve YouTube token dahil)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -114,6 +115,10 @@ export default function Home() {
         const currentUser = api.getCurrentUser();
         if (currentUser) {
           silentRefreshVideos();
+        }
+        // YouTube OAuth token süresi dolmuşsa arka planda sessizce yenile
+        if (isYouTubeConnected()) {
+          getValidYouTubeAccessToken();
         }
       }
     };
