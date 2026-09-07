@@ -16,6 +16,7 @@ function getHeaders() {
 async function request(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
   const config = {
+    cache: "no-store",
     ...options,
     headers: {
       ...getHeaders(),

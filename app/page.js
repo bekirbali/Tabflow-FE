@@ -21,6 +21,27 @@ import {
   toggleWatchLater,
 } from "./utils/youtube-auth";
 
+// Normalize a URL by stripping tracking/session params for comparison
+const normalizeUrl = (rawUrl) => {
+  try {
+    const u = new URL(rawUrl);
+    if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
+      const v = u.searchParams.get("v");
+      if (v) return `youtube:${v}`;
+      const pathId = u.pathname.replace("/", "").split("?")[0];
+      if (pathId.length === 11) return `youtube:${pathId}`;
+    }
+    u.hash = "";
+    ["utm_source", "utm_medium", "utm_campaign", "ref", "si"].forEach((p) =>
+      u.searchParams.delete(p)
+    );
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return rawUrl;
+  }
+};
+
+
 export default function Home() {
   const [videos, setVideos] = useState([]); // Represents our links/tabs stream
   const [activeTab, setActiveTab] = useState("feed"); // "feed" | "watched" | "private"
@@ -133,29 +154,47 @@ export default function Home() {
     setIsLoading(true);
     try {
       const data = await api.getLinks();
-      const mapped = data.map((v) => {
-        const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
-        return {
-          id: v.id,
-          videoId: ytId,
-          video_id: ytId,
-          url: v.url,
-          type: ytId ? "video" : (v.type || "general"),
-          title: v.title,
-          source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
-          is_clean: v.is_clean || v.is_watched || false,
-          is_watched: v.is_clean || v.is_watched || false, // compatibility fallback
-          liked: v.liked,
-          bookmarked: v.bookmarked,
-          is_private: v.is_private || false,
-          duration: v.duration,
-          metadata: v.metadata || {},
-          curator: v.curator,
-          category: v.category,
-          created_at: v.created_at
-        };
-      });
-      setVideos(mapped);
+      
+      const uniqueMap = new Map();
+      
+      for (const v of data) {
+         const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
+         const normUrl = normalizeUrl(v.url);
+         const key = ytId ? `yt_${ytId}` : `url_${normUrl}`;
+         
+         const isClean = v.is_clean || v.is_watched || false;
+         
+         if (uniqueMap.has(key)) {
+             const existing = uniqueMap.get(key);
+             if (isClean && !existing.is_clean) {
+                 existing.is_clean = true;
+                 existing.is_watched = true;
+             }
+             if (v.liked) existing.liked = true;
+             if (v.bookmarked) existing.bookmarked = true;
+         } else {
+             uniqueMap.set(key, {
+                 id: v.id,
+                 videoId: ytId,
+                 video_id: ytId,
+                 url: v.url,
+                 type: ytId ? "video" : (v.type || "general"),
+                 title: v.title,
+                 source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
+                 is_clean: isClean,
+                 is_watched: isClean,
+                 liked: v.liked,
+                 bookmarked: v.bookmarked,
+                 is_private: v.is_private || false,
+                 duration: v.duration,
+                 metadata: v.metadata || {},
+                 curator: v.curator,
+                 category: v.category,
+                 created_at: v.created_at
+             });
+         }
+      }
+      setVideos(Array.from(uniqueMap.values()));
     } catch (err) {
       console.error("Cloud links fetch error:", err);
       addToast("Bulut verileri alınamadı, çevrimdışı mod kullanılıyor.", "error");
@@ -194,7 +233,20 @@ export default function Home() {
       // Mevcut listeyle karşılaştır, sadece yeni ID'leri öne ekle
       setVideos((prev) => {
         const existingIds = new Set(prev.map((v) => v.id));
-        const newItems = mapped.filter((v) => !existingIds.has(v.id));
+        const existingVideoIds = new Set(prev.filter(v => v.videoId || v.video_id).map(v => v.videoId || v.video_id));
+        const existingUrls = new Set(prev.map(v => normalizeUrl(v.url)));
+
+        const newItems = mapped.filter((v) => {
+          if (existingIds.has(v.id)) return false;
+          
+          const vId = v.videoId || v.video_id;
+          if (vId && existingVideoIds.has(vId)) return false;
+          
+          if (existingUrls.has(normalizeUrl(v.url))) return false;
+          
+          return true;
+        });
+
         if (newItems.length === 0) return prev; // Değişiklik yoksa state'i tetikleme
         return [...newItems, ...prev];
       });
@@ -266,28 +318,6 @@ export default function Home() {
     }, 50);
   };
 
-  // Normalize a URL by stripping tracking/session params for comparison
-  const normalizeUrl = (rawUrl) => {
-    try {
-      const u = new URL(rawUrl);
-      // YouTube'da sadece video ID'yi tut, diğer parametreleri (t=, list=, si=...) at
-      if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
-        const v = u.searchParams.get("v");
-        if (v) return `youtube:${v}`;
-        // youtu.be/VIDEO_ID formatı
-        const pathId = u.pathname.replace("/", "").split("?")[0];
-        if (pathId.length === 11) return `youtube:${pathId}`;
-      }
-      // Diğer sitelerde hash ve bazı tracking param'ları at
-      u.hash = "";
-      ["utm_source", "utm_medium", "utm_campaign", "ref", "si"].forEach((p) =>
-        u.searchParams.delete(p)
-      );
-      return u.toString().replace(/\/$/, ""); // trailing slash kaldır
-    } catch {
-      return rawUrl;
-    }
-  };
 
   // Add Link Handler
   const handleAddLink = async (linkPayload) => {
@@ -373,11 +403,16 @@ export default function Home() {
     if (!item) return;
     const newLiked = !item.liked;
 
-    // Optimistic UI update
-    const updated = videos.map((v) =>
-      v.id === id ? { ...v, liked: newLiked } : v
-    );
-    setVideos(updated);
+    // Optimistic UI update via functional state
+    setVideos((prev) => {
+      const updated = prev.map((v) =>
+        v.id === id ? { ...v, liked: newLiked } : v
+      );
+      if (!user) {
+        localStorage.setItem("tabflow_videos", JSON.stringify(updated));
+      }
+      return updated;
+    });
 
     if (user) {
       try {
@@ -388,9 +423,9 @@ export default function Home() {
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
-      localStorage.setItem("tabflow_videos", JSON.stringify(updated));
       addToast(newLiked ? "Beğenildi! ❤️" : "Beğeni geri alındı.", "success");
     }
+
 
     // YouTube entegrasyonu: bağlıysa ve video ise YouTube'da da beğen
     const videoId = item.video_id || item.videoId;
@@ -414,10 +449,15 @@ export default function Home() {
     const newBookmarked = !item.bookmarked;
 
     // Optimistic UI update
-    const updated = videos.map((v) =>
-      v.id === id ? { ...v, bookmarked: newBookmarked } : v
-    );
-    setVideos(updated);
+    setVideos((prev) => {
+      const updated = prev.map((v) =>
+        v.id === id ? { ...v, bookmarked: newBookmarked } : v
+      );
+      if (!user) {
+        localStorage.setItem("tabflow_videos", JSON.stringify(updated));
+      }
+      return updated;
+    });
 
     if (user) {
       try {
@@ -428,9 +468,9 @@ export default function Home() {
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
-      localStorage.setItem("tabflow_videos", JSON.stringify(updated));
       addToast(newBookmarked ? "Yer imlerine eklendi! 🔖" : "Yer imi kaldırıldı.", "success");
     }
+
 
     // YouTube entegrasyonu: bağlıysa ve video ise "Daha Sonra İzle"ye ekle/çıkar
     const videoId = item.video_id || item.videoId;
@@ -496,15 +536,21 @@ export default function Home() {
     ]);
 
     // Optimistic UI update
-    const updated = videos.map((v) =>
-      v.id === id ? { ...v, is_clean: nextState, is_watched: nextState } : v
-    );
-    setVideos(updated);
-
-    // Adjust focused index if card is removed
-    if (focusedIndex >= updated.filter((v) => activeTab === "feed" ? !(v.is_clean || v.is_watched) : (v.is_clean || v.is_watched)).length) {
-      setFocusedIndex(Math.max(0, focusedIndex - 1));
-    }
+    setVideos((prev) => {
+      const updated = prev.map((v) =>
+        v.id === id ? { ...v, is_clean: nextState, is_watched: nextState } : v
+      );
+      
+      // Adjust focused index if card is removed
+      if (focusedIndex >= updated.filter((v) => activeTab === "feed" ? !(v.is_clean || v.is_watched) : (v.is_clean || v.is_watched)).length) {
+        setFocusedIndex(Math.max(0, focusedIndex - 1));
+      }
+      
+      if (!user) {
+        localStorage.setItem("tabflow_videos", JSON.stringify(updated));
+      }
+      return updated;
+    });
 
     if (user) {
       try {
@@ -519,7 +565,6 @@ export default function Home() {
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
-      localStorage.setItem("tabflow_videos", JSON.stringify(updated));
       if (nextState) {
         addToast("Harika! Temizlendi. (Inbox Zero 🎯) Geri alabilirsiniz (Z)", "success");
       } else {
