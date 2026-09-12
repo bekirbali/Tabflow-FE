@@ -264,19 +264,6 @@ export default function ContentCard({
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                 />
-                {/* Floating Instant Finish Button over Playing Video */}
-                {activeTab === "feed" && (
-                  <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
-                    <button
-                      onClick={handleActionClick}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer border border-emerald-400/30"
-                      title="Videoyu izlendi olarak işaretle (Ctrl+W veya W)"
-                    >
-                      <Check className="h-3.5 w-3.5 stroke-[3]" />
-                      <span>İzlendi (W)</span>
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <div 
