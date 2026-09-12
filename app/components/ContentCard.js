@@ -15,10 +15,13 @@ export default function ContentCard({
   onDelete,
   onAction, // Mark as Read/Clean / Restore
   onFocusClick, // Callback to open Focus Mode modal
-  isFocused // Keyboard navigation state
+  isFocused, // Keyboard navigation state
+  onPlayStart // Callback when playback starts
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
+  const [savedProgress, setSavedProgress] = useState(0);
+  const iframeRef = React.useRef(null);
 
   // Normalize properties for backward compatibility
   const id = video.id || video.videoId;
@@ -58,8 +61,72 @@ export default function ContentCard({
     return `${diffDays} gün önce`;
   };
 
+  // Format seconds to mm:ss or hh:mm:ss
+  const formatSeconds = (sec) => {
+    if (!sec || isNaN(sec)) return "0:00";
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    if (h > 0) {
+      return `${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+    }
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  // 1. Kaldığı yerden devam et: localStorage'dan kaydedilmiş süreyi yükle
+  React.useEffect(() => {
+    if (typeof window !== "undefined" && video_id) {
+      const saved = localStorage.getItem(`yt_progress_${video_id}`);
+      if (saved && !isNaN(Number(saved))) {
+        setSavedProgress(Number(saved));
+      }
+    }
+  }, [video_id]);
+
+  // 2. Oynatılırken YouTube IFrame API ile süreyi anlık kaydet
+  React.useEffect(() => {
+    if (!isPlaying || !video_id || typeof window === "undefined") return;
+
+    const handleYTMessage = (event) => {
+      try {
+        if (typeof event.data === "string") {
+          const data = JSON.parse(event.data);
+          if (data.event === "infoDelivery" && data.info && data.info.currentTime !== undefined) {
+            const time = Math.floor(data.info.currentTime);
+            if (time > 2) {
+              setSavedProgress(time);
+              localStorage.setItem(`yt_progress_${video_id}`, time.toString());
+            }
+          }
+          // Video tamamen bittiğinde (playerState: 0) kaydı temizle
+          if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
+            localStorage.removeItem(`yt_progress_${video_id}`);
+            setSavedProgress(0);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener("message", handleYTMessage);
+
+    // YouTube iframe'ine listening mesajı gönder (veri akışını başlatır)
+    const interval = setInterval(() => {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: "listening", id: video_id }),
+          "*"
+        );
+      }
+    }, 1500);
+
+    return () => {
+      window.removeEventListener("message", handleYTMessage);
+      clearInterval(interval);
+    };
+  }, [isPlaying, video_id]);
+
   const handleActionClick = (e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     setIsFadingOut(true);
     setTimeout(() => {
       onAction(video.id);
@@ -89,6 +156,9 @@ export default function ContentCard({
     e.stopPropagation();
     if (type === "video" && video_id) {
       setIsPlaying(true);
+      if (onPlayStart) {
+        onPlayStart(video.id);
+      }
     } else if (onFocusClick) {
       onFocusClick(video);
     }
@@ -164,13 +234,29 @@ export default function ContentCard({
         <div className="relative w-full aspect-video bg-zinc-950 overflow-hidden border-b border-white/5">
           {type === "video" && video_id ? (
             isPlaying ? (
-              <iframe
-                src={`https://www.${activeTab === "private" ? "youtube-nocookie" : "youtube"}.com/embed/${video_id}?autoplay=1&rel=0`}
-                title={title}
-                className="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
+              <div className="relative w-full h-full">
+                <iframe
+                  ref={iframeRef}
+                  src={`https://www.${activeTab === "private" ? "youtube-nocookie" : "youtube"}.com/embed/${video_id}?autoplay=1&enablejsapi=1&rel=0${savedProgress > 3 ? `&start=${savedProgress}` : ""}`}
+                  title={title}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+                {/* Floating Instant Finish Button over Playing Video */}
+                {activeTab === "feed" && (
+                  <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+                    <button
+                      onClick={handleActionClick}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer border border-emerald-400/30"
+                      title="Videoyu izlendi olarak işaretle (Ctrl+W veya W)"
+                    >
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      <span>İzlendi (W)</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div 
                 onClick={handlePlayClick}
@@ -192,10 +278,18 @@ export default function ContentCard({
                     <Play className="h-7 w-7 text-white fill-white ml-1" />
                   </button>
                 </div>
+                {/* Duration Badge */}
                 {duration && (
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-white/10 backdrop-blur-md text-xs font-bold text-white shadow-lg pointer-events-none z-10">
                     <Clock className="h-3.5 w-3.5 text-rose-400" />
                     <span>{duration}</span>
+                  </div>
+                )}
+                {/* Resume from where you left off badge */}
+                {savedProgress > 5 && (
+                  <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-950/90 border border-violet-500/40 backdrop-blur-md text-[11px] font-bold text-violet-200 shadow-xl pointer-events-none z-10">
+                    <Play className="h-3 w-3 fill-violet-300" />
+                    <span>Kaldığın yer: {formatSeconds(savedProgress)}</span>
                   </div>
                 )}
               </div>

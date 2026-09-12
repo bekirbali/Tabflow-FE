@@ -10,6 +10,60 @@ import YouTubeComments from "./YouTubeComments";
 
 export default function FocusModeModal({ video, isOpen, onClose }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
+  const [savedProgress, setSavedProgress] = useState(0);
+  const modalIframeRef = React.useRef(null);
+
+  const video_id = video ? (video.video_id || video.videoId || getYouTubeId(video.url)) : null;
+
+  // Load saved progress
+  useEffect(() => {
+    if (typeof window !== "undefined" && video_id) {
+      const saved = localStorage.getItem(`yt_progress_${video_id}`);
+      if (saved && !isNaN(Number(saved))) {
+        setSavedProgress(Number(saved));
+      }
+    }
+  }, [video_id, isOpen]);
+
+  // Track playback time in modal
+  useEffect(() => {
+    if (!isOpen || !video_id || typeof window === "undefined") return;
+
+    const handleYTMessage = (event) => {
+      try {
+        if (typeof event.data === "string") {
+          const data = JSON.parse(event.data);
+          if (data.event === "infoDelivery" && data.info && data.info.currentTime !== undefined) {
+            const time = Math.floor(data.info.currentTime);
+            if (time > 2) {
+              setSavedProgress(time);
+              localStorage.setItem(`yt_progress_${video_id}`, time.toString());
+            }
+          }
+          if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
+            localStorage.removeItem(`yt_progress_${video_id}`);
+            setSavedProgress(0);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener("message", handleYTMessage);
+
+    const interval = setInterval(() => {
+      if (modalIframeRef.current && modalIframeRef.current.contentWindow) {
+        modalIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: "listening", id: video_id }),
+          "*"
+        );
+      }
+    }, 1500);
+
+    return () => {
+      window.removeEventListener("message", handleYTMessage);
+      clearInterval(interval);
+    };
+  }, [isOpen, video_id]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -29,7 +83,6 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
 
   if (!isOpen || !video) return null;
 
-  const video_id = video.video_id || video.videoId || getYouTubeId(video.url);
   const type = video_id ? "video" : (video.type || "general");
   const title = video.title || "Başlıksız İçerik";
   const source_name = video.source_name || video.author_name || "Bilinmeyen Kaynak";
@@ -164,7 +217,8 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
               <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto custom-scrollbar">
                 <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black shrink-0">
                   <iframe
-                    src={`https://www.youtube.com/embed/${video_id}?autoplay=1`}
+                    ref={modalIframeRef}
+                    src={`https://www.youtube.com/embed/${video_id}?autoplay=1&enablejsapi=1${savedProgress > 3 ? `&start=${savedProgress}` : ""}`}
                     title={title}
                     frameBorder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

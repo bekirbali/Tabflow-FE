@@ -65,6 +65,9 @@ export default function Home() {
   // Keyboard shortcuts helper visibility
   const [showKeyboardHelper, setShowKeyboardHelper] = useState(false);
 
+  // Active playing video in feed (for Ctrl+W / W shortcut tracking)
+  const [playingVideoId, setPlayingVideoId] = useState(null);
+
   // Secret / Private tab unlock handler
   const handleSecretUnlock = async (password) => {
     if (!user) {
@@ -760,12 +763,39 @@ export default function Home() {
         });
       }
 
-      // W: Mark active as clean/archive
-      else if (key === "w") {
+      // W or Ctrl+W: Mark active or currently playing video as clean/archive
+      else if (key === "w" || (e.ctrlKey && key === "w")) {
         e.preventDefault();
+
+        // 1. If currently playing a video in the feed
+        if (playingVideoId) {
+          const playingVideo = videos.find((v) => v.id === playingVideoId);
+          handleActionVideo(playingVideoId);
+          setPlayingVideoId(null);
+          if (playingVideo) {
+            addToast(`"${(playingVideo.title || "Video").substring(0, 30)}..." izlendi olarak işaretlendi ✓`, "success");
+          }
+          return;
+        }
+
+        // 2. If focus modal is open
+        if (isFocusOpen && selectedFocusLink) {
+          handleActionVideo(selectedFocusLink.id);
+          setIsFocusOpen(false);
+          setSelectedFocusLink(null);
+          return;
+        }
+
+        // 3. If focusedIndex is active on the cards
         if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
           const activeCard = filteredVideos[focusedIndex];
           handleActionVideo(activeCard.id);
+          return;
+        }
+
+        // 4. Fallback: If no card is focused, mark first visible video
+        if (filteredVideos.length > 0) {
+          handleActionVideo(filteredVideos[0].id);
         }
       }
 
@@ -791,7 +821,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleGlobalKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted, filteredVideos, focusedIndex, isFocusOpen]);
+  }, [isMounted, filteredVideos, focusedIndex, isFocusOpen, selectedFocusLink, playingVideoId]);
 
   const pendingCount = useMemo(() => {
     return videos.filter((v) => !(v.is_clean || v.is_watched)).length;
@@ -980,6 +1010,10 @@ export default function Home() {
                       onFocusClick={(item) => {
                         setSelectedFocusLink(item);
                         setIsFocusOpen(true);
+                      }}
+                      onPlayStart={(id) => {
+                        setPlayingVideoId(id);
+                        setFocusedIndex(idx);
                       }}
                     />
                   </div>
