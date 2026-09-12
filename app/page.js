@@ -91,6 +91,9 @@ export default function Home() {
       const currentUser = api.getCurrentUser();
       if (currentUser) {
         setUser(currentUser);
+        if (currentUser.api_key && typeof window !== "undefined") {
+          window.postMessage({ action: "tabflow_auth_success", apiKey: currentUser.api_key }, "*");
+        }
         fetchCloudVideos();
       } else {
         loadLocalVideos();
@@ -124,6 +127,67 @@ export default function Home() {
       addToast(`YouTube bağlanmasında hata oluştu: ${errDetail ? decodeURIComponent(errDetail) : "Bilinmeyen hata"}`, "error");
       window.history.replaceState({}, document.title, "/");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Extension Köprüsü Dinleyicisi (Anlık canlı senkronizasyon — 0ms gecikme)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleExtensionBridgeMessage = (event) => {
+      // Eklenti köprüsünden gelen link ekleme sinyalini yakala
+      if (
+        event.data &&
+        (event.data.action === "tabflow_link_added" ||
+          event.data.type === "tabflow_link_added")
+      ) {
+        const rawLink = event.data.data?.link || event.data.data;
+        if (!rawLink || !rawLink.url) {
+          silentRefreshVideos();
+          return;
+        }
+
+        const ytId = rawLink.video_id || rawLink.videoId || getYouTubeId(rawLink.url);
+        const normUrl = normalizeUrl(rawLink.url);
+        const isClean = rawLink.is_clean || rawLink.is_watched || false;
+
+        const formatted = {
+          id: rawLink.id || `ext_${Date.now()}`,
+          videoId: ytId,
+          video_id: ytId,
+          url: rawLink.url,
+          type: ytId ? "video" : (rawLink.type || "general"),
+          title: rawLink.title || "YouTube Video",
+          source_name: ytId ? "YouTube" : (rawLink.source_name || rawLink.author_name || "YouTube"),
+          is_clean: isClean,
+          is_watched: isClean,
+          liked: rawLink.liked || false,
+          bookmarked: rawLink.bookmarked || false,
+          is_private: rawLink.is_private || false,
+          duration: rawLink.duration || "0:00",
+          metadata: rawLink.metadata || {},
+          curator: rawLink.curator || "@extension",
+          category: rawLink.category || "Tech",
+          created_at: rawLink.created_at || new Date().toISOString()
+        };
+
+        setVideos((prev) => {
+          const exists = prev.some(
+            (v) =>
+              (formatted.videoId && (v.videoId === formatted.videoId || v.video_id === formatted.videoId)) ||
+              normalizeUrl(v.url) === normUrl
+          );
+          if (exists) return prev;
+          return [formatted, ...prev];
+        });
+
+        const shortTitle = (formatted.title || "Yeni Video").substring(0, 35);
+        addToast(`Eklentiden eklendi: ${shortTitle}... 🚀`, "success");
+      }
+    };
+
+    window.addEventListener("message", handleExtensionBridgeMessage);
+    return () => window.removeEventListener("message", handleExtensionBridgeMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -639,6 +703,9 @@ export default function Home() {
 
   const handleAuthSuccess = (loggedInUser) => {
     setUser(loggedInUser);
+    if (loggedInUser?.api_key && typeof window !== "undefined") {
+      window.postMessage({ action: "tabflow_auth_success", apiKey: loggedInUser.api_key }, "*");
+    }
     fetchCloudVideos();
   };
 
