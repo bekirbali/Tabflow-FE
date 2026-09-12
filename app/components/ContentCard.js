@@ -21,6 +21,7 @@ export default function ContentCard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [savedProgress, setSavedProgress] = useState(0);
+  const [initialStartSec, setInitialStartSec] = useState(0);
   const iframeRef = React.useRef(null);
 
   // Normalize properties for backward compatibility
@@ -78,12 +79,19 @@ export default function ContentCard({
     if (typeof window !== "undefined" && video_id) {
       const saved = localStorage.getItem(`yt_progress_${video_id}`);
       if (saved && !isNaN(Number(saved))) {
-        setSavedProgress(Number(saved));
+        const sec = Number(saved);
+        setSavedProgress(sec);
+        setInitialStartSec(sec > 3 ? sec : 0);
+      } else {
+        setSavedProgress(0);
+        setInitialStartSec(0);
       }
     }
   }, [video_id]);
 
   // 2. Oynatılırken YouTube IFrame API ile süreyi anlık kaydet
+  // ÖNEMLİ: Oynatma esnasında setState çağırmıyoruz! Sadece localStorage güncellenir.
+  // Bu sayede iframe her saniye baştan yüklenmez, video kesintisiz ve akıcı oynar.
   React.useEffect(() => {
     if (!isPlaying || !video_id || typeof window === "undefined") return;
 
@@ -94,7 +102,6 @@ export default function ContentCard({
           if (data.event === "infoDelivery" && data.info && data.info.currentTime !== undefined) {
             const time = Math.floor(data.info.currentTime);
             if (time > 2) {
-              setSavedProgress(time);
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
             }
           }
@@ -102,6 +109,7 @@ export default function ContentCard({
           if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
             localStorage.removeItem(`yt_progress_${video_id}`);
             setSavedProgress(0);
+            setInitialStartSec(0);
           }
         }
       } catch (e) {}
@@ -127,6 +135,9 @@ export default function ContentCard({
 
   const handleActionClick = (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
+    if (typeof window !== "undefined" && video_id) {
+      localStorage.removeItem(`yt_progress_${video_id}`);
+    }
     setIsFadingOut(true);
     setTimeout(() => {
       onAction(video.id);
@@ -136,6 +147,9 @@ export default function ContentCard({
 
   const handleDeleteClick = (e) => {
     e.stopPropagation();
+    if (typeof window !== "undefined" && video_id) {
+      localStorage.removeItem(`yt_progress_${video_id}`);
+    }
     setIsFadingOut(true);
     setTimeout(() => {
       onDelete(video.id || video.videoId);
@@ -155,6 +169,13 @@ export default function ContentCard({
   const handlePlayClick = (e) => {
     e.stopPropagation();
     if (type === "video" && video_id) {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem(`yt_progress_${video_id}`);
+        if (saved && !isNaN(Number(saved))) {
+          const sec = Number(saved);
+          setInitialStartSec(sec > 3 ? sec : 0);
+        }
+      }
       setIsPlaying(true);
       if (onPlayStart) {
         onPlayStart(video.id);
@@ -237,7 +258,7 @@ export default function ContentCard({
               <div className="relative w-full h-full">
                 <iframe
                   ref={iframeRef}
-                  src={`https://www.${activeTab === "private" ? "youtube-nocookie" : "youtube"}.com/embed/${video_id}?autoplay=1&enablejsapi=1&rel=0${savedProgress > 3 ? `&start=${savedProgress}` : ""}`}
+                  src={`https://www.${activeTab === "private" ? "youtube-nocookie" : "youtube"}.com/embed/${video_id}?autoplay=1&enablejsapi=1&rel=0${initialStartSec > 3 ? `&start=${initialStartSec}` : ""}`}
                   title={title}
                   className="w-full h-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

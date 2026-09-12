@@ -10,22 +10,27 @@ import YouTubeComments from "./YouTubeComments";
 
 export default function FocusModeModal({ video, isOpen, onClose }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
-  const [savedProgress, setSavedProgress] = useState(0);
+  const [initialStartSec, setInitialStartSec] = useState(0);
   const modalIframeRef = React.useRef(null);
 
   const video_id = video ? (video.video_id || video.videoId || getYouTubeId(video.url)) : null;
 
-  // Load saved progress
+  // Load saved progress once when modal opens
   useEffect(() => {
-    if (typeof window !== "undefined" && video_id) {
+    if (typeof window !== "undefined" && video_id && isOpen) {
       const saved = localStorage.getItem(`yt_progress_${video_id}`);
       if (saved && !isNaN(Number(saved))) {
-        setSavedProgress(Number(saved));
+        const sec = Number(saved);
+        setInitialStartSec(sec > 3 ? sec : 0);
+      } else {
+        setInitialStartSec(0);
       }
     }
   }, [video_id, isOpen]);
 
   // Track playback time in modal
+  // ÖNEMLİ: Oynatma esnasında setState çağırmıyoruz! Sadece localStorage güncellenir.
+  // Bu sayede iframe her saniye baştan yüklenmez, video kesintisiz ve akıcı oynar.
   useEffect(() => {
     if (!isOpen || !video_id || typeof window === "undefined") return;
 
@@ -36,13 +41,12 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
           if (data.event === "infoDelivery" && data.info && data.info.currentTime !== undefined) {
             const time = Math.floor(data.info.currentTime);
             if (time > 2) {
-              setSavedProgress(time);
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
             }
           }
           if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
             localStorage.removeItem(`yt_progress_${video_id}`);
-            setSavedProgress(0);
+            setInitialStartSec(0);
           }
         }
       } catch (e) {}
@@ -218,7 +222,7 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
                 <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black shrink-0">
                   <iframe
                     ref={modalIframeRef}
-                    src={`https://www.youtube.com/embed/${video_id}?autoplay=1&enablejsapi=1${savedProgress > 3 ? `&start=${savedProgress}` : ""}`}
+                    src={`https://www.youtube.com/embed/${video_id}?autoplay=1&enablejsapi=1${initialStartSec > 3 ? `&start=${initialStartSec}` : ""}`}
                     title={title}
                     frameBorder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
