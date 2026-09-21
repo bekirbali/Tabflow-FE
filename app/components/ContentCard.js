@@ -22,6 +22,8 @@ export default function ContentCard({
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [savedProgress, setSavedProgress] = useState(0);
   const [initialStartSec, setInitialStartSec] = useState(0);
+  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+  const [isHistorySynced, setIsHistorySynced] = useState(false);
   const iframeRef = React.useRef(null);
 
   // Normalize properties for backward compatibility
@@ -74,20 +76,74 @@ export default function ContentCard({
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
-  // 1. Kaldığı yerden devam et: localStorage'dan kaydedilmiş süreyi yükle
+  // 1. Kaldığı yerden devam et & YouTube geçmiş eşitleme durumunu localStorage'dan oku
   React.useEffect(() => {
-    if (typeof window !== "undefined" && video_id) {
-      const saved = localStorage.getItem(`yt_progress_${video_id}`);
-      if (saved && !isNaN(Number(saved))) {
-        const sec = Number(saved);
-        setSavedProgress(sec);
-        setInitialStartSec(sec > 3 ? sec : 0);
-      } else {
-        setSavedProgress(0);
-        setInitialStartSec(0);
+    const timer = setTimeout(() => {
+      if (typeof window !== "undefined" && video_id) {
+        const saved = localStorage.getItem(`yt_progress_${video_id}`);
+        if (saved && !isNaN(Number(saved))) {
+          const sec = Number(saved);
+          setSavedProgress(sec);
+          setInitialStartSec(sec > 3 ? sec : 0);
+        } else {
+          setSavedProgress(0);
+          setInitialStartSec(0);
+        }
+
+        const synced = localStorage.getItem(`yt_synced_${video_id}`);
+        if (synced === "true") {
+          setIsHistorySynced(true);
+        }
       }
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [video_id]);
+
+  // YouTube Geçmiş Eşitleme Yanıtını Dinle
+  React.useEffect(() => {
+    if (!video_id || typeof window === "undefined") return;
+
+    const handleSyncMessage = (event) => {
+      if (
+        event.data &&
+        event.data.source === "tabflow_extension" &&
+        event.data.action === "tabflow_history_synced" &&
+        event.data.videoId === video_id
+      ) {
+        setIsSyncingHistory(false);
+        if (event.data.success) {
+          setIsHistorySynced(true);
+          try {
+            localStorage.setItem(`yt_synced_${video_id}`, "true");
+          } catch (e) {}
+        }
+      }
+    };
+
+    window.addEventListener("message", handleSyncMessage);
+    return () => window.removeEventListener("message", handleSyncMessage);
+  }, [video_id]);
+
+  // YouTube Geçmişine Sessizce Eşitleme Tetikleyicisi
+  const handleSyncHistory = (e) => {
+    e.stopPropagation();
+    if (!video_id || isSyncingHistory || isHistorySynced) return;
+    setIsSyncingHistory(true);
+
+    window.postMessage(
+      {
+        source: "tabflow_web",
+        action: "sync_to_youtube_history",
+        videoId: video_id,
+      },
+      "*"
+    );
+
+    // Güvenlik zaman aşımı: 16 saniye sonra yanıt gelmezse yüklenme animasyonunu durdur
+    setTimeout(() => {
+      setIsSyncingHistory((prev) => (prev ? false : prev));
+    }, 16000);
+  };
 
   // 2. Oynatılırken YouTube IFrame API ile süreyi anlık kaydet
   // ÖNEMLİ: Oynatma esnasında setState çağırmıyoruz! Sadece localStorage güncellenir.
@@ -238,6 +294,15 @@ export default function ContentCard({
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-rose-400" />
               <span>{duration}</span>
+            </span>
+          )}
+          {type === "video" && isHistorySynced && (
+            <span
+              className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hidden sm:flex items-center gap-1"
+              title="YouTube hesabınızın izleme geçmişine işlendi"
+            >
+              <Check className="h-3 w-3 stroke-[2.5]" />
+              <span>Geçmişte ✓</span>
             </span>
           )}
           <button
@@ -422,6 +487,38 @@ export default function ContentCard({
           >
             <Bookmark className={`h-5 w-5 ${video.bookmarked ? "fill-amber-500" : ""}`} />
           </button>
+
+          {/* YouTube Watch History Sync Button (Yalnızca YouTube Videoları İçin) */}
+          {type === "video" && video_id && (
+            <button
+              onClick={handleSyncHistory}
+              disabled={isSyncingHistory || isHistorySynced}
+              title={
+                isHistorySynced
+                  ? "YouTube İzleme Geçmişine Eklendi (%90 izlendi olarak işlendi) ✓"
+                  : isSyncingHistory
+                  ? "YouTube geçmişine arka planda sessizce ekleniyor..."
+                  : "YouTube İzleme Geçmişine Ekle (%90 izlendi olarak işler)"
+              }
+              className={`p-2.5 rounded-xl transition-all duration-300 active:scale-90 flex items-center justify-center ${
+                isHistorySynced
+                  ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 cursor-default"
+                  : isSyncingHistory
+                  ? "text-rose-400 bg-rose-500/10 border border-rose-500/20 animate-pulse cursor-wait"
+                  : "text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 cursor-pointer"
+              }`}
+            >
+              {isSyncingHistory ? (
+                <div className="h-5 w-5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+              ) : isHistorySynced ? (
+                <Check className="h-5 w-5 text-emerald-400 stroke-[2.5]" />
+              ) : (
+                <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
+                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                </svg>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Action Buttons */}

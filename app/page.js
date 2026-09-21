@@ -187,6 +187,19 @@ export default function Home() {
         const shortTitle = (formatted.title || "Yeni Video").substring(0, 35);
         addToast(`Eklentiden eklendi: ${shortTitle}... 🚀`, "success");
       }
+
+      // YouTube İzleme Geçmişine Eşitleme Bildirimi
+      if (
+        event.data &&
+        event.data.source === "tabflow_extension" &&
+        event.data.action === "tabflow_history_synced"
+      ) {
+        if (event.data.success) {
+          addToast("YouTube izleme geçmişine %90 izlendi olarak eklendi! ▶️", "success");
+        } else {
+          addToast(event.data.error || "YouTube geçmişine eklenirken bir hata oluştu.", "error");
+        }
+      }
     };
 
     window.addEventListener("message", handleExtensionBridgeMessage);

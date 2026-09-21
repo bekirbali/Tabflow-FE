@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   X, ExternalLink, BookOpen, Play, Code, Globe, 
-  Star, GitFork, AlertCircle, Type, ZoomIn, ZoomOut 
+  Star, GitFork, AlertCircle, Type, ZoomIn, ZoomOut, Check 
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
 import YouTubeComments from "./YouTubeComments";
@@ -11,22 +11,78 @@ import YouTubeComments from "./YouTubeComments";
 export default function FocusModeModal({ video, isOpen, onClose }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
   const [initialStartSec, setInitialStartSec] = useState(0);
+  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+  const [isHistorySynced, setIsHistorySynced] = useState(false);
   const modalIframeRef = React.useRef(null);
 
   const video_id = video ? (video.video_id || video.videoId || getYouTubeId(video.url)) : null;
 
-  // Load saved progress once when modal opens
+  // Load saved progress & sync status once when modal opens
   useEffect(() => {
-    if (typeof window !== "undefined" && video_id && isOpen) {
-      const saved = localStorage.getItem(`yt_progress_${video_id}`);
-      if (saved && !isNaN(Number(saved))) {
-        const sec = Number(saved);
-        setInitialStartSec(sec > 3 ? sec : 0);
-      } else {
-        setInitialStartSec(0);
+    const timer = setTimeout(() => {
+      if (typeof window !== "undefined" && video_id && isOpen) {
+        const saved = localStorage.getItem(`yt_progress_${video_id}`);
+        if (saved && !isNaN(Number(saved))) {
+          const sec = Number(saved);
+          setInitialStartSec(sec > 3 ? sec : 0);
+        } else {
+          setInitialStartSec(0);
+        }
+
+        const synced = localStorage.getItem(`yt_synced_${video_id}`);
+        if (synced === "true") {
+          setIsHistorySynced(true);
+        } else {
+          setIsHistorySynced(false);
+        }
       }
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [video_id, isOpen]);
+
+  // Listen for sync completion from extension bridge
+  useEffect(() => {
+    if (!isOpen || !video_id || typeof window === "undefined") return;
+
+    const handleSyncMessage = (event) => {
+      if (
+        event.data &&
+        event.data.source === "tabflow_extension" &&
+        event.data.action === "tabflow_history_synced" &&
+        event.data.videoId === video_id
+      ) {
+        setIsSyncingHistory(false);
+        if (event.data.success) {
+          setIsHistorySynced(true);
+          try {
+            localStorage.setItem(`yt_synced_${video_id}`, "true");
+          } catch (e) {}
+        }
+      }
+    };
+
+    window.addEventListener("message", handleSyncMessage);
+    return () => window.removeEventListener("message", handleSyncMessage);
+  }, [isOpen, video_id]);
+
+  const handleSyncHistory = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (!video_id || isSyncingHistory || isHistorySynced) return;
+    setIsSyncingHistory(true);
+
+    window.postMessage(
+      {
+        source: "tabflow_web",
+        action: "sync_to_youtube_history",
+        videoId: video_id,
+      },
+      "*"
+    );
+
+    setTimeout(() => {
+      setIsSyncingHistory((prev) => (prev ? false : prev));
+    }, 16000);
+  };
 
   // Track playback time in modal
   // ÖNEMLİ: Oynatma esnasında setState çağırmıyoruz! Sadece localStorage güncellenir.
@@ -158,6 +214,41 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
               <span>Sitede Aç</span>
               <ExternalLink className="h-3 w-3" />
             </a>
+
+            {/* YouTube History Sync Button */}
+            {type === "video" && video_id && (
+              <button
+                onClick={handleSyncHistory}
+                disabled={isSyncingHistory || isHistorySynced}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all ${
+                  isHistorySynced
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30 cursor-default"
+                    : isSyncingHistory
+                    ? "text-rose-400 bg-rose-500/10 border-rose-500/20 animate-pulse cursor-wait"
+                    : "text-zinc-300 hover:text-rose-400 bg-zinc-800/40 hover:bg-rose-500/10 border-white/5 hover:border-rose-500/20 cursor-pointer"
+                }`}
+                title="YouTube izleme geçmişine %90 izlendi olarak sessizce ekle"
+              >
+                {isSyncingHistory ? (
+                  <>
+                    <div className="h-3.5 w-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Geçmişe Ekleniyor...</span>
+                  </>
+                ) : isHistorySynced ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400 stroke-[2.5]" />
+                    <span>Geçmişte ✓</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3.5 w-3.5 fill-rose-500" viewBox="0 0 24 24">
+                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                    </svg>
+                    <span>Geçmişe Ekle</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Font settings for Article Reader View */}
             {type === "article" && paragraphs.length > 0 && (
