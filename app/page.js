@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Inbox, Archive, Check, AlertCircle, AlertTriangle, HelpCircle, Heart, Bookmark } from "lucide-react";
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
@@ -20,6 +20,8 @@ import {
   rateVideoOnYouTube,
   toggleWatchLater,
 } from "./utils/youtube-auth";
+
+const ITEMS_PER_PAGE = 20;
 
 // Normalize a URL by stripping tracking/session params for comparison
 const normalizeUrl = (rawUrl) => {
@@ -45,6 +47,8 @@ const normalizeUrl = (rawUrl) => {
 export default function Home() {
   const [videos, setVideos] = useState([]); // Represents our links/tabs stream
   const [activeTab, setActiveTab] = useState("feed"); // "feed" | "watched" | "private"
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE); // Infinite scroll chunking (20 at a time)
+  const loadMoreRef = useRef(null);
   const [isPrivateUnlocked, setIsPrivateUnlocked] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [isMounted, setIsMounted] = useState(false);
@@ -153,6 +157,7 @@ export default function Home() {
         const ytId = rawLink.video_id || rawLink.videoId || getYouTubeId(rawLink.url);
         const normUrl = normalizeUrl(rawLink.url);
         const isClean = rawLink.is_clean || rawLink.is_watched || false;
+        const watchedAt = rawLink.watched_at || (isClean ? (rawLink.created_at || new Date().toISOString()) : null);
 
         const formatted = {
           id: rawLink.id || `ext_${Date.now()}`,
@@ -164,6 +169,7 @@ export default function Home() {
           source_name: ytId ? "YouTube" : (rawLink.source_name || rawLink.author_name || "YouTube"),
           is_clean: isClean,
           is_watched: isClean,
+          watched_at: watchedAt,
           liked: rawLink.liked || false,
           bookmarked: rawLink.bookmarked || false,
           is_private: rawLink.is_private || false,
@@ -229,6 +235,11 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Reset infinite scroll page chunk when activeTab changes
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [activeTab]);
+
   // Fetch from Django Cloud Database
   async function fetchCloudVideos() {
     setIsLoading(true);
@@ -243,12 +254,14 @@ export default function Home() {
          const key = ytId ? `yt_${ytId}` : `url_${normUrl}`;
          
          const isClean = v.is_clean || v.is_watched || false;
+         const watchedAt = v.watched_at || (isClean ? v.created_at : null);
          
          if (uniqueMap.has(key)) {
              const existing = uniqueMap.get(key);
              if (isClean && !existing.is_clean) {
                  existing.is_clean = true;
                  existing.is_watched = true;
+                 existing.watched_at = watchedAt || new Date().toISOString();
              }
              if (v.liked) existing.liked = true;
              if (v.bookmarked) existing.bookmarked = true;
@@ -263,6 +276,7 @@ export default function Home() {
                  source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
                  is_clean: isClean,
                  is_watched: isClean,
+                 watched_at: watchedAt,
                  liked: v.liked,
                  bookmarked: v.bookmarked,
                  is_private: v.is_private || false,
@@ -290,6 +304,7 @@ export default function Home() {
       const data = await api.getLinks();
       const mapped = data.map((v) => {
         const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
+        const isClean = v.is_clean || v.is_watched || false;
         return {
           id: v.id,
           videoId: ytId,
@@ -298,8 +313,9 @@ export default function Home() {
           type: ytId ? "video" : (v.type || "general"),
           title: v.title,
           source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
-          is_clean: v.is_clean || v.is_watched || false,
-          is_watched: v.is_clean || v.is_watched || false,
+          is_clean: isClean,
+          is_watched: isClean,
+          watched_at: v.watched_at || (isClean ? v.created_at : null),
           liked: v.liked,
           bookmarked: v.bookmarked,
           is_private: v.is_private || false,
@@ -365,27 +381,70 @@ export default function Home() {
     }, 3500);
   }
 
-  // Calculate filtered lists based on active tab
+  // Calculate filtered lists based on active tab with proper ordering
   const filteredVideos = useMemo(() => {
     if (activeTab === "feed") {
-      return videos.filter((v) => !(v.is_clean || v.is_watched) && !v.is_private);
+      return videos
+        .filter((v) => !(v.is_clean || v.is_watched) && !v.is_private)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     if (activeTab === "watched") {
-      return videos.filter((v) => (v.is_clean || v.is_watched) && !v.is_private);
+      // Watched tab: most recently watched video goes to the top!
+      return videos
+        .filter((v) => (v.is_clean || v.is_watched) && !v.is_private)
+        .sort((a, b) => {
+          const timeA = new Date(a.watched_at || a.created_at || 0).getTime();
+          const timeB = new Date(b.watched_at || b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
     }
     if (activeTab === "private") {
-      return videos.filter((v) => v.is_private);
+      return videos
+        .filter((v) => v.is_private)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     if (activeTab === "liked") {
-      return videos.filter((v) => v.liked && !v.is_private);
+      return videos
+        .filter((v) => v.liked && !v.is_private)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     if (activeTab === "saved") {
-      return videos.filter((v) => v.bookmarked && !v.is_private);
+      return videos
+        .filter((v) => v.bookmarked && !v.is_private)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     return [];
   }, [videos, activeTab]);
 
+  // Paginated/Chunked items for infinite scroll (drastically improves performance with large archives)
+  const displayedVideos = useMemo(() => {
+    return filteredVideos.slice(0, visibleCount);
+  }, [filteredVideos, visibleCount]);
 
+  const hasMore = visibleCount < filteredVideos.length;
+
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, filteredVideos.length));
+  }, [filteredVideos.length]);
+
+  // Infinite scroll intersection observer
+  useEffect(() => {
+    if (!hasMore) return;
+    const target = loadMoreRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: "350px" }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
 
   // Helper to scroll active card element into view
   const scrollCardIntoView = (id) => {
@@ -425,6 +484,7 @@ export default function Home() {
       source_name: linkPayload.source_name,
       video_id: linkPayload.video_id,
       is_clean: false,
+      watched_at: null,
       liked: false,
       bookmarked: false,
       is_private: activeTab === "private", // private moddaysa gizli olarak kaydet
@@ -445,6 +505,8 @@ export default function Home() {
           title: newLink.title,
           source_name: newLink.source_name,
           is_clean: newLink.is_clean,
+          is_watched: newLink.is_clean,
+          watched_at: newLink.watched_at || null,
           liked: newLink.liked,
           bookmarked: newLink.bookmarked,
           is_private: newLink.is_private || false,
@@ -468,6 +530,7 @@ export default function Home() {
       };
       // For local compat
       newVideo.is_watched = newVideo.is_clean;
+      newVideo.watched_at = null;
       newVideo.author_name = newVideo.source_name;
       
       const updated = [newVideo, ...videos];
@@ -608,17 +671,19 @@ export default function Home() {
     const item = videos.find((v) => v.id === id);
     if (!item) return;
     const nextState = !(item.is_clean || item.is_watched);
+    const nowIso = new Date().toISOString();
+    const newWatchedAt = nextState ? nowIso : null;
 
     // Push operation to undo stack
     setUndoStack((prev) => [
       ...prev,
-      { type: "archive", id: id, previousState: !nextState }
+      { type: "archive", id: id, previousState: !nextState, previousWatchedAt: item.watched_at }
     ]);
 
     // Optimistic UI update
     setVideos((prev) => {
       const updated = prev.map((v) =>
-        v.id === id ? { ...v, is_clean: nextState, is_watched: nextState } : v
+        v.id === id ? { ...v, is_clean: nextState, is_watched: nextState, watched_at: newWatchedAt } : v
       );
       
       // Adjust focused index if card is removed
@@ -634,7 +699,7 @@ export default function Home() {
 
     if (user) {
       try {
-        await api.updateLink(id, { is_clean: nextState });
+        await api.updateLink(id, { is_clean: nextState, watched_at: newWatchedAt });
         if (nextState) {
           addToast("Harika! Temizlendi. (Inbox Zero 🎯) Geri alabilirsiniz (Z)", "success");
         } else {
@@ -666,15 +731,16 @@ export default function Home() {
     if (lastAction.type === "archive") {
       const id = lastAction.id;
       const prevVal = lastAction.previousState;
+      const prevWatchedAt = lastAction.previousWatchedAt;
 
       const updated = videos.map((v) =>
-        v.id === id ? { ...v, is_clean: prevVal, is_watched: prevVal } : v
+        v.id === id ? { ...v, is_clean: prevVal, is_watched: prevVal, watched_at: prevWatchedAt } : v
       );
       setVideos(updated);
 
       if (user) {
         try {
-          await api.updateLink(id, { is_clean: prevVal });
+          await api.updateLink(id, { is_clean: prevVal, watched_at: prevWatchedAt });
           addToast("İşlem başarıyla geri alındı ↩️", "success");
         } catch (e) {
           addToast("Geri alma senkronizasyonu başarısız oldu.", "error");
@@ -760,6 +826,9 @@ export default function Home() {
         if (filteredVideos.length === 0) return;
         setFocusedIndex((prev) => {
           const nextIndex = prev + 1 >= filteredVideos.length ? 0 : prev + 1;
+          if (nextIndex >= displayedVideos.length - 3 && hasMore) {
+            loadMore();
+          }
           scrollCardIntoView(filteredVideos[nextIndex]?.id);
           return nextIndex;
         });
@@ -800,15 +869,15 @@ export default function Home() {
         }
 
         // 3. If focusedIndex is active on the cards
-        if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
-          const activeCard = filteredVideos[focusedIndex];
+        if (focusedIndex >= 0 && focusedIndex < displayedVideos.length) {
+          const activeCard = displayedVideos[focusedIndex];
           handleActionVideo(activeCard.id);
           return;
         }
 
         // 4. Fallback: If no card is focused, mark first visible video
-        if (filteredVideos.length > 0) {
-          handleActionVideo(filteredVideos[0].id);
+        if (displayedVideos.length > 0) {
+          handleActionVideo(displayedVideos[0].id);
         }
       }
 
@@ -821,8 +890,8 @@ export default function Home() {
       // Enter: Focus mode
       else if (e.key === "Enter") {
         e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < filteredVideos.length) {
-          const activeCard = filteredVideos[focusedIndex];
+        if (focusedIndex >= 0 && focusedIndex < displayedVideos.length) {
+          const activeCard = displayedVideos[focusedIndex];
           setSelectedFocusLink(activeCard);
           setIsFocusOpen(true);
         }
@@ -834,7 +903,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleGlobalKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted, filteredVideos, focusedIndex, isFocusOpen, selectedFocusLink, playingVideoId]);
+  }, [isMounted, filteredVideos, displayedVideos, focusedIndex, isFocusOpen, selectedFocusLink, playingVideoId, hasMore, loadMore]);
 
   const pendingCount = useMemo(() => {
     return videos.filter((v) => !(v.is_clean || v.is_watched)).length;
@@ -1010,7 +1079,7 @@ export default function Home() {
               </div>
             ) : filteredVideos.length > 0 ? (
               <div className="flex flex-col gap-6">
-                {filteredVideos.map((video, idx) => (
+                {displayedVideos.map((video, idx) => (
                   <div id={`card-${video.id}`} key={video.id}>
                     <ContentCard
                       video={video}
@@ -1031,6 +1100,22 @@ export default function Home() {
                     />
                   </div>
                 ))}
+
+                {/* Infinite Scroll sentinel & loader */}
+                {hasMore && (
+                  <div ref={loadMoreRef} className="py-6 flex flex-col items-center justify-center gap-2">
+                    <div className="h-6 w-6 border-2 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
+                    <span className="text-xs text-zinc-500 font-medium">Daha fazla içerik yükleniyor...</span>
+                  </div>
+                )}
+
+                {/* All items loaded indicator */}
+                {!hasMore && filteredVideos.length > ITEMS_PER_PAGE && (
+                  <div className="py-8 text-center text-xs text-zinc-500 font-medium flex items-center justify-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/60" />
+                    <span>Tüm arşiv görüntülendi ({filteredVideos.length} içerik)</span>
+                  </div>
+                )}
               </div>
             ) : (
               // Empty states

@@ -273,8 +273,15 @@ export default function ContentCard({
             <span className="text-sm font-bold text-zinc-100 leading-tight">
               {source_name}
             </span>
-            <span className="text-xs text-zinc-400 font-medium mt-0.5">
-              {formatTimeAgo(video.created_at || video.addedAt)}
+            <span className="text-xs text-zinc-400 font-medium mt-0.5 flex items-center gap-1">
+              {activeTab === "watched" && (video.watched_at || video.is_clean || video.is_watched) ? (
+                <>
+                  <span className="text-violet-400 font-semibold">İzlendi:</span>
+                  <span>{formatTimeAgo(video.watched_at || video.created_at)}</span>
+                </>
+              ) : (
+                <span>{formatTimeAgo(video.created_at || video.addedAt)}</span>
+              )}
             </span>
           </div>
         </div>

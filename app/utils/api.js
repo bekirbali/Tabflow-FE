@@ -111,6 +111,7 @@ export const api = {
       title: linkData.title || "Untitled Link",
       source_name: linkData.source_name || linkData.author_name || "Unknown Source",
       is_clean: linkData.is_clean || linkData.is_watched || false,
+      watched_at: linkData.watched_at || null,
       liked: linkData.liked || false,
       bookmarked: linkData.bookmarked || false,
       is_private: linkData.is_private || false,
@@ -129,6 +130,7 @@ export const api = {
     const payload = {};
     if (fields.is_clean !== undefined) payload.is_clean = fields.is_clean;
     if (fields.is_watched !== undefined) payload.is_clean = fields.is_watched;
+    if (fields.watched_at !== undefined) payload.watched_at = fields.watched_at;
     if (fields.liked !== undefined) payload.liked = fields.liked;
     if (fields.bookmarked !== undefined) payload.bookmarked = fields.bookmarked;
     if (fields.title !== undefined) payload.title = fields.title;
@@ -156,6 +158,7 @@ export const api = {
       title: v.title,
       source_name: v.source_name || v.author_name,
       is_clean: v.is_clean || v.is_watched || false,
+      watched_at: v.watched_at || null,
       liked: v.liked || false,
       bookmarked: v.bookmarked || false,
       duration: v.duration || "0:00",
