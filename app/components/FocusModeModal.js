@@ -3,16 +3,21 @@
 import React, { useState, useEffect } from "react";
 import { 
   X, ExternalLink, BookOpen, Play, Code, Globe, 
-  Star, GitFork, AlertCircle, Type, ZoomIn, ZoomOut, Check 
+  Star, GitFork, AlertCircle, Type, ZoomIn, ZoomOut, Check,
+  Bell, BellRing
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
+import { isYouTubeConnected, subscribeToYouTubeChannel } from "../utils/youtube-auth";
 import YouTubeComments from "./YouTubeComments";
 
-export default function FocusModeModal({ video, isOpen, onClose }) {
+export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
   const [initialStartSec, setInitialStartSec] = useState(0);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [isHistorySynced, setIsHistorySynced] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [channelTitle, setChannelTitle] = useState("");
   const modalIframeRef = React.useRef(null);
 
   const video_id = video ? (video.video_id || video.videoId || getYouTubeId(video.url)) : null;
@@ -35,10 +40,18 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
         } else {
           setIsHistorySynced(false);
         }
+
+        const channelId = video?.metadata?.channel_id;
+        const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
+        if (localStorage.getItem(subKey) === "true" || localStorage.getItem(`yt_sub_vid_${video_id}`) === "true") {
+          setIsSubscribed(true);
+        } else {
+          setIsSubscribed(false);
+        }
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [video_id, isOpen]);
+  }, [video_id, isOpen, video?.metadata?.channel_id]);
 
   // Listen for sync completion from extension bridge
   useEffect(() => {
@@ -82,6 +95,65 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
     setTimeout(() => {
       setIsSyncingHistory((prev) => (prev ? false : prev));
     }, 16000);
+  };
+
+  const handleToggleSubscribe = async (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (!video_id || isSubscribing) return;
+
+    if (!isYouTubeConnected()) {
+      if (addToast) {
+        addToast("YouTube kanalına doğrudan abone olmak için YouTube hesabınızı bağlayın.", "warning");
+      }
+      return;
+    }
+
+    setIsSubscribing(true);
+    const nextAction = isSubscribed ? "unsubscribe" : "subscribe";
+    const channelId = video?.metadata?.channel_id;
+
+    try {
+      const result = await subscribeToYouTubeChannel({
+        videoId: video_id,
+        channelId,
+        action: nextAction,
+      });
+
+      if (result.success) {
+        const newSubState = !!result.subscribed;
+        setIsSubscribed(newSubState);
+        const resolvedTitle = result.channelTitle || source_name;
+        if (resolvedTitle) setChannelTitle(resolvedTitle);
+
+        const subKey = (result.channelId || channelId)
+          ? `yt_sub_ch_${result.channelId || channelId}`
+          : `yt_sub_vid_${video_id}`;
+        localStorage.setItem(subKey, newSubState ? "true" : "false");
+        localStorage.setItem(`yt_sub_vid_${video_id}`, newSubState ? "true" : "false");
+
+        if (addToast) {
+          addToast(
+            newSubState
+              ? `${resolvedTitle} kanalına başarıyla abone olundu! 🔔`
+              : `${resolvedTitle} kanal aboneliği kaldırıldı.`,
+            "success"
+          );
+        }
+      } else if (result.needsReconnect || result.notConnected) {
+        if (addToast) {
+          addToast("YouTube bağlantınız sona ermiş. Lütfen tekrar bağlanın.", "warning");
+        }
+      } else {
+        if (addToast) {
+          addToast(result.error || "Abonelik işlemi gerçekleştirilemedi.", "error");
+        }
+      }
+    } catch (err) {
+      console.error("FocusModeModal handleToggleSubscribe error:", err);
+      if (addToast) addToast("Bağlantı hatası oluştu.", "error");
+    } finally {
+      setIsSubscribing(false);
+    }
   };
 
   // Track playback time in modal
@@ -245,6 +317,43 @@ export default function FocusModeModal({ video, isOpen, onClose }) {
                       <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                     </svg>
                     <span>Geçmişe Ekle</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* YouTube Channel Subscribe Button */}
+            {type === "video" && video_id && (
+              <button
+                onClick={handleToggleSubscribe}
+                disabled={isSubscribing}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all ${
+                  isSubscribed
+                    ? "text-red-400 bg-red-500/10 border-red-500/30 cursor-pointer"
+                    : isSubscribing
+                    ? "text-red-400 bg-red-500/10 border-red-500/20 animate-pulse cursor-wait"
+                    : "text-zinc-300 hover:text-red-400 bg-zinc-800/40 hover:bg-red-500/10 border-white/5 hover:border-red-500/20 cursor-pointer"
+                }`}
+                title={
+                  isSubscribed
+                    ? `${channelTitle || source_name} kanalına abonesiniz (Abonelikten çıkmak için tıklayın)`
+                    : `${channelTitle || source_name} kanalına YouTube'da abone ol`
+                }
+              >
+                {isSubscribing ? (
+                  <>
+                    <div className="h-3.5 w-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                    <span>İşleniyor...</span>
+                  </>
+                ) : isSubscribed ? (
+                  <>
+                    <BellRing className="h-3.5 w-3.5 fill-red-400" />
+                    <span>Abonesin 🔔</span>
+                  </>
+                ) : (
+                  <>
+                    <Bell className="h-3.5 w-3.5" />
+                    <span>Abone Ol</span>
                   </>
                 )}
               </button>

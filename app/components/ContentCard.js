@@ -3,9 +3,11 @@
 import React, { useState } from "react";
 import { 
   Play, Trash2, Heart, Bookmark, Check, RotateCcw, Plus, Clock, 
-  BookOpen, Code, Star, GitFork, Globe, ExternalLink, Maximize2 
+  BookOpen, Code, Star, GitFork, Globe, ExternalLink, Maximize2,
+  Bell, BellRing
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
+import { isYouTubeConnected, subscribeToYouTubeChannel } from "../utils/youtube-auth";
 
 export default function ContentCard({
   video, // This prop represents the link object (renamed to keep compatibility)
@@ -16,7 +18,8 @@ export default function ContentCard({
   onAction, // Mark as Read/Clean / Restore
   onFocusClick, // Callback to open Focus Mode modal
   isFocused, // Keyboard navigation state
-  onPlayStart // Callback when playback starts
+  onPlayStart, // Callback when playback starts
+  addToast
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
@@ -24,6 +27,9 @@ export default function ContentCard({
   const [initialStartSec, setInitialStartSec] = useState(0);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [isHistorySynced, setIsHistorySynced] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [channelTitle, setChannelTitle] = useState("");
   const iframeRef = React.useRef(null);
 
   // Normalize properties for backward compatibility
@@ -94,10 +100,16 @@ export default function ContentCard({
         if (synced === "true") {
           setIsHistorySynced(true);
         }
+
+        const channelId = metadata.channel_id;
+        const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
+        if (localStorage.getItem(subKey) === "true" || localStorage.getItem(`yt_sub_vid_${video_id}`) === "true") {
+          setIsSubscribed(true);
+        }
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [video_id]);
+  }, [video_id, metadata.channel_id]);
 
   // YouTube Geçmiş Eşitleme Yanıtını Dinle
   React.useEffect(() => {
@@ -143,6 +155,66 @@ export default function ContentCard({
     setTimeout(() => {
       setIsSyncingHistory((prev) => (prev ? false : prev));
     }, 16000);
+  };
+
+  // YouTube Kanalına Abone Ol / Abonelikten Çık Tetikleyicisi
+  const handleToggleSubscribe = async (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (!video_id || isSubscribing) return;
+
+    if (!isYouTubeConnected()) {
+      if (addToast) {
+        addToast("YouTube kanalına doğrudan abone olmak için YouTube hesabınızı bağlayın.", "warning");
+      }
+      return;
+    }
+
+    setIsSubscribing(true);
+    const nextAction = isSubscribed ? "unsubscribe" : "subscribe";
+    const channelId = metadata.channel_id;
+
+    try {
+      const result = await subscribeToYouTubeChannel({
+        videoId: video_id,
+        channelId,
+        action: nextAction,
+      });
+
+      if (result.success) {
+        const newSubState = !!result.subscribed;
+        setIsSubscribed(newSubState);
+        const resolvedTitle = result.channelTitle || source_name;
+        if (resolvedTitle) setChannelTitle(resolvedTitle);
+
+        const subKey = (result.channelId || channelId)
+          ? `yt_sub_ch_${result.channelId || channelId}`
+          : `yt_sub_vid_${video_id}`;
+        localStorage.setItem(subKey, newSubState ? "true" : "false");
+        localStorage.setItem(`yt_sub_vid_${video_id}`, newSubState ? "true" : "false");
+
+        if (addToast) {
+          addToast(
+            newSubState
+              ? `${resolvedTitle} kanalına başarıyla abone olundu! 🔔`
+              : `${resolvedTitle} kanal aboneliği kaldırıldı.`,
+            "success"
+          );
+        }
+      } else if (result.needsReconnect || result.notConnected) {
+        if (addToast) {
+          addToast("YouTube bağlantınız sona ermiş. Lütfen profil menüsünden tekrar bağlanın.", "warning");
+        }
+      } else {
+        if (addToast) {
+          addToast(result.error || "Abonelik işlemi gerçekleştirilemedi.", "error");
+        }
+      }
+    } catch (err) {
+      console.error("handleToggleSubscribe error:", err);
+      if (addToast) addToast("Bağlantı hatası oluştu.", "error");
+    } finally {
+      setIsSubscribing(false);
+    }
   };
 
   // 2. Oynatılırken YouTube IFrame API ile süreyi anlık kaydet
@@ -523,6 +595,36 @@ export default function ContentCard({
                 <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
                   <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                 </svg>
+              )}
+            </button>
+          )}
+
+          {/* YouTube Channel Subscribe Button (Kanalı Takip Et / Abone Ol) */}
+          {type === "video" && video_id && (
+            <button
+              onClick={handleToggleSubscribe}
+              disabled={isSubscribing}
+              title={
+                isSubscribing
+                  ? "İşleniyor..."
+                  : isSubscribed
+                  ? `${channelTitle || source_name} kanalına abonesiniz (Abonelikten çıkmak için tıklayın)`
+                  : `${channelTitle || source_name} kanalına YouTube'da abone ol`
+              }
+              className={`p-2.5 rounded-xl transition-all duration-300 active:scale-90 flex items-center justify-center cursor-pointer ${
+                isSubscribed
+                  ? "text-red-500 bg-red-500/10 border border-red-500/20 shadow-sm shadow-red-950/20"
+                  : isSubscribing
+                  ? "text-red-400 bg-red-500/10 border border-red-500/20 animate-pulse cursor-wait"
+                  : "text-zinc-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
+              }`}
+            >
+              {isSubscribing ? (
+                <div className="h-5 w-5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+              ) : isSubscribed ? (
+                <BellRing className="h-5 w-5 fill-red-500" />
+              ) : (
+                <Bell className="h-5 w-5" />
               )}
             </button>
           )}

@@ -1097,6 +1097,7 @@ export default function Home() {
                         setPlayingVideoId(id);
                         setFocusedIndex(idx);
                       }}
+                      addToast={addToast}
                     />
                   </div>
                 ))}
@@ -1255,6 +1256,7 @@ export default function Home() {
           setIsFocusOpen(false);
           setSelectedFocusLink(null);
         }}
+        addToast={addToast}
       />
 
       {/* Auth Modal UI */}

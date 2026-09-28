@@ -190,3 +190,79 @@ export async function toggleWatchLater(videoId, action) {
     return { success: false, error: "Bağlantı hatası." };
   }
 }
+
+/**
+ * YouTube kanalına abone ol / abonelikten çık.
+ * @param {{ videoId?: string, channelId?: string, action?: "subscribe" | "unsubscribe" }} param0
+ * @returns {Promise<{ success: boolean, subscribed?: boolean, alreadySubscribed?: boolean, channelTitle?: string, needsReconnect?: boolean, notConnected?: boolean, error?: string }>}
+ */
+export async function subscribeToYouTubeChannel({ videoId, channelId, action = "subscribe" }) {
+  const accessToken = await getValidYouTubeAccessToken();
+  if (!accessToken) return { success: false, notConnected: true, needsReconnect: true };
+
+  try {
+    const res = await fetch("/api/youtube/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoId, channelId, action, accessToken }),
+    });
+
+    const data = await res.json();
+
+    // Token süresi dolmuşsa otomatik yenilemeyi dene
+    if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
+      const newToken = await refreshYouTubeToken();
+      if (!newToken) return { success: false, needsReconnect: true };
+
+      const retryRes = await fetch("/api/youtube/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId, channelId, action, accessToken: newToken }),
+      });
+      const retryData = await retryRes.json();
+      return retryData;
+    }
+
+    return data;
+  } catch (err) {
+    console.error("subscribeToYouTubeChannel error:", err);
+    return { success: false, error: "Bağlantı hatası." };
+  }
+}
+
+/**
+ * YouTube kanal abonelik durumunu kontrol et.
+ * @param {{ videoId?: string, channelId?: string }} param0
+ * @returns {Promise<{ success: boolean, subscribed?: boolean, channelTitle?: string, needsReconnect?: boolean }>}
+ */
+export async function checkYouTubeSubscriptionStatus({ videoId, channelId }) {
+  const accessToken = await getValidYouTubeAccessToken();
+  if (!accessToken) return { success: false, notConnected: true };
+
+  try {
+    const res = await fetch("/api/youtube/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoId, channelId, action: "status", accessToken }),
+    });
+
+    const data = await res.json();
+
+    if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
+      const newToken = await refreshYouTubeToken();
+      if (!newToken) return { success: false, needsReconnect: true };
+
+      const retryRes = await fetch("/api/youtube/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId, channelId, action: "status", accessToken: newToken }),
+      });
+      return await retryRes.json();
+    }
+
+    return data;
+  } catch (err) {
+    console.error("checkYouTubeSubscriptionStatus error:", err);
+    return { success: false, error: "Bağlantı hatası." };
+  }
+}
