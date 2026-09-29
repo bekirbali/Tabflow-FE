@@ -4,10 +4,11 @@ import React, { useState } from "react";
 import { 
   Play, Trash2, Heart, Bookmark, Check, RotateCcw, Plus, Clock, 
   BookOpen, Code, Star, GitFork, Globe, ExternalLink, Maximize2,
-  Bell, BellRing
+  Bell, BellRing, MessageSquare, X
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
 import { isYouTubeConnected, subscribeToYouTubeChannel } from "../utils/youtube-auth";
+import YouTubeComments from "./YouTubeComments";
 
 export default function ContentCard({
   video, // This prop represents the link object (renamed to keep compatibility)
@@ -30,6 +31,7 @@ export default function ContentCard({
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [channelTitle, setChannelTitle] = useState("");
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const iframeRef = React.useRef(null);
 
   // Normalize properties for backward compatibility
@@ -628,6 +630,20 @@ export default function ContentCard({
               )}
             </button>
           )}
+
+          {/* YouTube Comments & Post Comment Button */}
+          {type === "video" && video_id && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCommentsOpen(true);
+              }}
+              title="YouTube Yorumları & Yorum Gönder"
+              className="p-2.5 rounded-xl transition-all duration-300 active:scale-90 flex items-center justify-center cursor-pointer text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 border border-transparent hover:border-blue-500/20"
+            >
+              <MessageSquare className="h-5 w-5" />
+            </button>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -661,6 +677,52 @@ export default function ContentCard({
           )}
         </div>
       </div>
+
+      {/* YouTube Comments Modal */}
+      {isCommentsOpen && type === "video" && video_id && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsCommentsOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-xl h-[82vh] max-h-[700px] bg-zinc-900 border border-white/10 rounded-2xl md:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-scaleIn"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 px-5 border-b border-white/10 bg-zinc-950/80 shrink-0">
+              <div className="flex items-center gap-3 min-w-0 pr-4">
+                <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+                  <MessageSquare className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex flex-col">
+                  <span className="text-sm font-bold text-zinc-100 truncate">
+                    {title}
+                  </span>
+                  <span className="text-xs text-zinc-400 truncate">
+                    {source_name}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsCommentsOpen(false)}
+                title="Kapat"
+                className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer shrink-0"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Comments Component */}
+            <div className="flex-1 overflow-hidden">
+              <YouTubeComments videoId={video_id} addToast={addToast} />
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   );
 }

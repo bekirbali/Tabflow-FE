@@ -444,7 +444,7 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
 
               {/* Right Side: YouTube Comments Panel */}
               <div className="w-full lg:w-96 min-h-[380px] lg:min-h-0 lg:h-full shrink-0">
-                <YouTubeComments videoId={video_id} />
+                <YouTubeComments videoId={video_id} addToast={addToast} />
               </div>
             </div>
           )}

@@ -266,3 +266,41 @@ export async function checkYouTubeSubscriptionStatus({ videoId, channelId }) {
     return { success: false, error: "Bağlantı hatası." };
   }
 }
+
+/**
+ * YouTube videosuna uzaktan yorum gönder.
+ * @param {{ videoId: string, text: string }} param0
+ * @returns {Promise<{ success: boolean, comment?: object, error?: string, needsReconnect?: boolean, notConnected?: boolean }>}
+ */
+export async function postCommentToYouTube({ videoId, text }) {
+  const accessToken = await getValidYouTubeAccessToken();
+  if (!accessToken) return { success: false, notConnected: true, needsReconnect: true };
+
+  try {
+    const res = await fetch("/api/youtube/comments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoId, text, accessToken }),
+    });
+
+    const data = await res.json();
+
+    if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
+      const newToken = await refreshYouTubeToken();
+      if (!newToken) return { success: false, needsReconnect: true };
+
+      const retryRes = await fetch("/api/youtube/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId, text, accessToken: newToken }),
+      });
+      return await retryRes.json();
+    }
+
+    return data;
+  } catch (err) {
+    console.error("postCommentToYouTube error:", err);
+    return { success: false, error: "Bağlantı hatası." };
+  }
+}
+

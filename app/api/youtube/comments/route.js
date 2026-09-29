@@ -84,3 +84,102 @@ export async function GET(request) {
     );
   }
 }
+
+/**
+ * POST /api/youtube/comments
+ * Body: { videoId: string, text: string, accessToken: string }
+ * YouTube Data API v3 commentThreads.insert kullanarak yeni bir yorum ekler.
+ */
+export async function POST(request) {
+  try {
+    const { videoId, text, accessToken } = await request.json();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { error: "YouTube oturumu bulunamadı. Lütfen YouTube hesabınızı bağlayın." },
+        { status: 401 }
+      );
+    }
+
+    if (!videoId || !text || !text.trim()) {
+      return NextResponse.json(
+        { error: "videoId ve yorum metni zorunludur." },
+        { status: 400 }
+      );
+    }
+
+    const authHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+
+    const res = await fetch(
+      "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet",
+      {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          snippet: {
+            videoId,
+            topLevelComment: {
+              snippet: {
+                textOriginal: text.trim(),
+              },
+            },
+          },
+        }),
+      }
+    );
+
+    if (res.status === 401) {
+      return NextResponse.json(
+        { error: "TOKEN_EXPIRED", message: "YouTube yetkilendirme süresi doldu." },
+        { status: 401 }
+      );
+    }
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      const reason = errorData?.error?.errors?.[0]?.reason || "";
+      const message = errorData?.error?.message || "Yorum gönderilemedi.";
+
+      if (reason === "commentsDisabled" || message.includes("disabled comments")) {
+        return NextResponse.json(
+          { error: "Bu video için yorumlar yayıncısı tarafından kapatılmış." },
+          { status: 403 }
+        );
+      }
+
+      console.error("YouTube comment post error:", errorData);
+      return NextResponse.json(
+        { error: message },
+        { status: res.status }
+      );
+    }
+
+    const data = await res.json();
+    const topComment = data?.snippet?.topLevelComment?.snippet || {};
+
+    return NextResponse.json({
+      success: true,
+      comment: {
+        id: data.id,
+        authorDisplayName: topComment.authorDisplayName || "Siz",
+        authorProfileImageUrl: topComment.authorProfileImageUrl || "",
+        authorChannelUrl: topComment.authorChannelUrl || "",
+        textDisplay: topComment.textDisplay || text.trim(),
+        textOriginal: topComment.textOriginal || text.trim(),
+        likeCount: 0,
+        publishedAt: topComment.publishedAt || new Date().toISOString(),
+        totalReplyCount: 0,
+      },
+    });
+  } catch (err) {
+    console.error("YouTube comments POST route error:", err);
+    return NextResponse.json(
+      { error: "Sunucu hatası oluştu." },
+      { status: 500 }
+    );
+  }
+}
+

@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { 
   MessageSquare, ThumbsUp, AlertCircle, 
-  MessageSquareOff, RefreshCw, Sparkles, User, ExternalLink 
+  MessageSquareOff, RefreshCw, Sparkles, User, ExternalLink,
+  Send, Loader2
 } from "lucide-react";
+import { isYouTubeConnected, postCommentToYouTube } from "../utils/youtube-auth";
 
 // Format relative date into Turkish
 function formatTimeAgo(dateString) {
@@ -34,11 +36,18 @@ function formatCompactNumber(num) {
   return num.toString();
 }
 
-export default function YouTubeComments({ videoId }) {
+export default function YouTubeComments({ videoId, addToast }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [disabled, setDisabled] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const [isPosting, setIsPosting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    setIsConnected(isYouTubeConnected());
+  }, []);
 
   const fetchComments = async () => {
     if (!videoId) return;
@@ -72,24 +81,71 @@ export default function YouTubeComments({ videoId }) {
     fetchComments();
   }, [videoId]);
 
+  const handlePostComment = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newComment.trim() || isPosting || !videoId) return;
+
+    if (!isYouTubeConnected()) {
+      if (addToast) {
+        addToast("YouTube'a uzaktan yorum göndermek için lütfen önce YouTube hesabınızı bağlayın.", "warning");
+      }
+      return;
+    }
+
+    setIsPosting(true);
+    try {
+      const res = await postCommentToYouTube({
+        videoId,
+        text: newComment.trim(),
+      });
+
+      if (res.success && res.comment) {
+        setComments((prev) => [res.comment, ...prev]);
+        setNewComment("");
+        if (addToast) {
+          addToast("Yorumunuz YouTube'da başarıyla paylaşıldı! 💬", "success");
+        }
+      } else if (res.needsReconnect || res.notConnected) {
+        if (addToast) {
+          addToast("YouTube oturumunuz sona ermiş. Lütfen tekrar bağlanın.", "warning");
+        }
+      } else {
+        if (addToast) {
+          addToast(res.error || "Yorum gönderilemedi.", "error");
+        }
+      }
+    } catch (err) {
+      console.error("handlePostComment error:", err);
+      if (addToast) addToast("Bağlantı hatası oluştu.", "error");
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      handlePostComment(e);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-zinc-950/60 border-t lg:border-t-0 lg:border-l border-white/10 overflow-hidden">
       {/* Panel Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-zinc-900/40 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
+          <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
             <MessageSquare className="h-4 w-4" />
           </div>
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              Öne Çıkan Yorumlar
+              YouTube Yorumları
               {!loading && !disabled && comments.length > 0 && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono">
                   {comments.length}
                 </span>
               )}
             </h3>
-            <p className="text-[11px] text-zinc-400">YouTube topluluk tartışmaları</p>
+            <p className="text-[11px] text-zinc-400">Tartışmalar ve uzaktan yorum yapma</p>
           </div>
         </div>
 
@@ -97,11 +153,58 @@ export default function YouTubeComments({ videoId }) {
           onClick={fetchComments}
           disabled={loading}
           title="Yorumları Yenile"
-          className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-all disabled:opacity-50"
+          className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-all disabled:opacity-50 cursor-pointer"
         >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-violet-400" : ""}`} />
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-blue-400" : ""}`} />
         </button>
       </div>
+
+      {/* Post Comment Input Section */}
+      {!disabled && (
+        <div className="p-3.5 px-4 bg-zinc-900/30 border-b border-white/5 shrink-0">
+          <form onSubmit={handlePostComment} className="flex flex-col gap-2">
+            <div className="relative flex items-center">
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isConnected
+                    ? "YouTube videosuna yorum yaz... (Ctrl+Enter)"
+                    : "YouTube'a bağlı değilsiniz (Bağlanarak yorum atabilirsiniz)"
+                }
+                rows={2}
+                disabled={isPosting}
+                className="w-full bg-zinc-950/80 border border-white/10 focus:border-blue-500/60 rounded-xl p-2.5 pr-11 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-all resize-none custom-scrollbar"
+              />
+              <button
+                type="submit"
+                disabled={!newComment.trim() || isPosting}
+                title="Yorumu YouTube'a Gönder (Ctrl+Enter)"
+                className="absolute right-2.5 bottom-2.5 p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:hover:bg-blue-600 text-white transition-all cursor-pointer shadow-md shadow-blue-950/30 active:scale-95"
+              >
+                {isPosting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+
+            {!isConnected && (
+              <div className="flex items-center justify-between text-[11px] text-zinc-400 bg-blue-500/5 border border-blue-500/10 rounded-lg px-2.5 py-1.5">
+                <span>Yorum atmak için YouTube hesabınızı bağlayın:</span>
+                <a
+                  href="/api/youtube/auth"
+                  className="font-bold text-blue-400 hover:text-blue-300 underline shrink-0 ml-2"
+                >
+                  Bağlan
+                </a>
+              </div>
+            )}
+          </form>
+        </div>
+      )}
 
       {/* Panel Content (Scrollable) */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3.5 custom-scrollbar">
@@ -147,7 +250,7 @@ export default function YouTubeComments({ videoId }) {
             <p className="text-rose-300/80">{error}</p>
             <button
               onClick={fetchComments}
-              className="mt-2 text-[11px] font-bold text-white bg-rose-600/40 hover:bg-rose-600/60 px-3 py-1.5 rounded-lg border border-rose-500/30 transition-all"
+              className="mt-2 text-[11px] font-bold text-white bg-rose-600/40 hover:bg-rose-600/60 px-3 py-1.5 rounded-lg border border-rose-500/30 transition-all cursor-pointer"
             >
               Tekrar Dene
             </button>
@@ -158,11 +261,11 @@ export default function YouTubeComments({ videoId }) {
         {!loading && !error && !disabled && comments.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 my-auto text-zinc-400 space-y-3">
             <div className="p-4 rounded-2xl bg-zinc-900/60 border border-white/5 text-zinc-500">
-              <Sparkles className="h-8 w-8 text-violet-400" />
+              <Sparkles className="h-8 w-8 text-blue-400" />
             </div>
             <div>
               <p className="text-sm font-semibold text-zinc-200">Henüz Yorum Bulunamadı</p>
-              <p className="text-xs text-zinc-500 mt-1">Bu video için öne çıkan herhangi bir yorum bulunmuyor.</p>
+              <p className="text-xs text-zinc-500 mt-1">Bu video için ilk yorumu yukarıdan siz gönderin!</p>
             </div>
           </div>
         )}
@@ -183,12 +286,14 @@ export default function YouTubeComments({ videoId }) {
                     className="w-7 h-7 rounded-full object-cover border border-white/10 shrink-0"
                     onError={(e) => {
                       e.target.style.display = "none";
-                      e.target.nextSibling.style.display = "flex";
+                      if (e.target.nextSibling) {
+                        e.target.nextSibling.style.display = "flex";
+                      }
                     }}
                   />
                 ) : null}
                 <div
-                  className="w-7 h-7 rounded-full bg-violet-600/20 text-violet-300 border border-violet-500/20 flex items-center justify-center text-xs font-bold shrink-0"
+                  className="w-7 h-7 rounded-full bg-blue-600/20 text-blue-300 border border-blue-500/20 flex items-center justify-center text-xs font-bold shrink-0"
                   style={{ display: comment.authorProfileImageUrl ? "none" : "flex" }}
                 >
                   <User className="h-3.5 w-3.5" />
@@ -200,7 +305,7 @@ export default function YouTubeComments({ videoId }) {
                       href={comment.authorChannelUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-bold text-zinc-200 hover:text-violet-400 truncate flex items-center gap-1 transition-colors"
+                      className="text-xs font-bold text-zinc-200 hover:text-blue-400 truncate flex items-center gap-1 transition-colors"
                     >
                       <span className="truncate">{comment.authorDisplayName}</span>
                     </a>
@@ -231,7 +336,7 @@ export default function YouTubeComments({ videoId }) {
               )}
 
               {comment.totalReplyCount > 0 && (
-                <div className="flex items-center gap-1 text-violet-400 font-medium bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/15">
+                <div className="flex items-center gap-1 text-blue-400 font-medium bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/15">
                   <MessageSquare className="h-3 w-3" />
                   <span>{comment.totalReplyCount} Yanıt</span>
                 </div>
