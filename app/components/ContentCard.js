@@ -141,8 +141,37 @@ export default function ContentCard({
   // YouTube Geçmişine Sessizce Eşitleme Tetikleyicisi
   const handleSyncHistory = (e) => {
     e.stopPropagation();
-    if (!video_id || isSyncingHistory || isHistorySynced) return;
+    if (!video_id || isSyncingHistory) return;
     setIsSyncingHistory(true);
+
+    let startedReceived = false;
+
+    // 2.5 saniye içinde eklentiden başlatma sinyali gelmezse kullanıcıyı bilgilendir
+    const extensionWatchdog = setTimeout(() => {
+      if (!startedReceived) {
+        setIsSyncingHistory(false);
+        if (addToast) {
+          addToast(
+            "TabFlow eklentisine ulaşılamadı. Eklentinin yüklü olduğundan ve bu sayfayı (F5) yenilediğinizden emin olun.",
+            "warning"
+          );
+        }
+      }
+    }, 2500);
+
+    const onBridgeMessage = (event) => {
+      if (
+        event.data &&
+        event.data.source === "tabflow_extension" &&
+        (event.data.action === "tabflow_history_sync_started" || event.data.action === "tabflow_history_synced") &&
+        event.data.videoId === video_id
+      ) {
+        startedReceived = true;
+        clearTimeout(extensionWatchdog);
+        window.removeEventListener("message", onBridgeMessage);
+      }
+    };
+    window.addEventListener("message", onBridgeMessage);
 
     window.postMessage(
       {
@@ -155,6 +184,8 @@ export default function ContentCard({
 
     // Güvenlik zaman aşımı: 16 saniye sonra yanıt gelmezse yüklenme animasyonunu durdur
     setTimeout(() => {
+      clearTimeout(extensionWatchdog);
+      window.removeEventListener("message", onBridgeMessage);
       setIsSyncingHistory((prev) => (prev ? false : prev));
     }, 16000);
   };
@@ -573,17 +604,17 @@ export default function ContentCard({
           {type === "video" && video_id && (
             <button
               onClick={handleSyncHistory}
-              disabled={isSyncingHistory || isHistorySynced}
+              disabled={isSyncingHistory}
               title={
                 isHistorySynced
-                  ? "YouTube İzleme Geçmişine Eklendi (%90 izlendi olarak işlendi) ✓"
+                  ? "YouTube İzleme Geçmişine Eklendi (%90 izlendi olarak işlendi). Tekrar eşitlemek için tıklayabilirsiniz."
                   : isSyncingHistory
                   ? "YouTube geçmişine arka planda sessizce ekleniyor..."
                   : "YouTube İzleme Geçmişine Ekle (%90 izlendi olarak işler)"
               }
               className={`p-2.5 rounded-xl transition-all duration-300 active:scale-90 flex items-center justify-center ${
                 isHistorySynced
-                  ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 cursor-default"
+                  ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:border-emerald-500/40 cursor-pointer"
                   : isSyncingHistory
                   ? "text-rose-400 bg-rose-500/10 border border-rose-500/20 animate-pulse cursor-wait"
                   : "text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 cursor-pointer"

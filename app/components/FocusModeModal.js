@@ -80,8 +80,37 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
 
   const handleSyncHistory = (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
-    if (!video_id || isSyncingHistory || isHistorySynced) return;
+    if (!video_id || isSyncingHistory) return;
     setIsSyncingHistory(true);
+
+    let startedReceived = false;
+
+    // 2.5 saniye içinde eklentiden başlatma sinyali gelmezse kullanıcıyı uyar
+    const extensionWatchdog = setTimeout(() => {
+      if (!startedReceived) {
+        setIsSyncingHistory(false);
+        if (addToast) {
+          addToast(
+            "TabFlow eklentisine ulaşılamadı. Eklentinin yüklü olduğundan ve bu sayfayı (F5) yenilediğinizden emin olun.",
+            "warning"
+          );
+        }
+      }
+    }, 2500);
+
+    const onBridgeMessage = (event) => {
+      if (
+        event.data &&
+        event.data.source === "tabflow_extension" &&
+        (event.data.action === "tabflow_history_sync_started" || event.data.action === "tabflow_history_synced") &&
+        event.data.videoId === video_id
+      ) {
+        startedReceived = true;
+        clearTimeout(extensionWatchdog);
+        window.removeEventListener("message", onBridgeMessage);
+      }
+    };
+    window.addEventListener("message", onBridgeMessage);
 
     window.postMessage(
       {
@@ -93,6 +122,8 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
     );
 
     setTimeout(() => {
+      clearTimeout(extensionWatchdog);
+      window.removeEventListener("message", onBridgeMessage);
       setIsSyncingHistory((prev) => (prev ? false : prev));
     }, 16000);
   };
@@ -291,15 +322,19 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
             {type === "video" && video_id && (
               <button
                 onClick={handleSyncHistory}
-                disabled={isSyncingHistory || isHistorySynced}
+                disabled={isSyncingHistory}
                 className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all ${
                   isHistorySynced
-                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30 cursor-default"
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-500/50 cursor-pointer"
                     : isSyncingHistory
                     ? "text-rose-400 bg-rose-500/10 border-rose-500/20 animate-pulse cursor-wait"
                     : "text-zinc-300 hover:text-rose-400 bg-zinc-800/40 hover:bg-rose-500/10 border-white/5 hover:border-rose-500/20 cursor-pointer"
                 }`}
-                title="YouTube izleme geçmişine %90 izlendi olarak sessizce ekle"
+                title={
+                  isHistorySynced
+                    ? "YouTube izleme geçmişine eklendi. Tekrar eşitlemek için tıklayabilirsiniz."
+                    : "YouTube izleme geçmişine %90 izlendi olarak sessizce ekle"
+                }
               >
                 {isSyncingHistory ? (
                   <>
