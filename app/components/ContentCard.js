@@ -182,13 +182,12 @@ export default function ContentCard({
       "*"
     );
 
-    // Güvenlik zaman aşımı:45 saniye sonra yanıt gelmezse yüklenme animasyonunu durdur
-    // (content.js en kötü ~26 sn video yükleme + ~13 sn oynatma ≈39 sn sürebilir)
+    // Güvenlik zaman aşımı: 16 saniye sonra yanıt gelmezse yüklenme animasyonunu durdur
     setTimeout(() => {
       clearTimeout(extensionWatchdog);
       window.removeEventListener("message", onBridgeMessage);
       setIsSyncingHistory((prev) => (prev ? false : prev));
-    }, 45000);
+    }, 16000);
   };
 
   // YouTube Kanalına Abone Ol / Abonelikten Çık Tetikleyicisi

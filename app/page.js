@@ -202,7 +202,7 @@ export default function Home() {
         if (event.data.success) {
           addToast("YouTube izleme geçmişine %90 izlendi olarak eklendi! ▶️", "success");
         } else {
-          addToast(event.data.error || "YouTube geçmişine eklenirken bir hata oluştu.", "error");
+          addToast("YouTube geçmişine eklenemedi.", "error");
         }
       }
     };

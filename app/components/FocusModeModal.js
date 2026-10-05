@@ -121,11 +121,12 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
       "*"
     );
 
+    // Güvenlik zaman aşımı: 16 saniye sonra yanıt gelmezse yüklenme animasyonunu durdur
     setTimeout(() => {
       clearTimeout(extensionWatchdog);
       window.removeEventListener("message", onBridgeMessage);
       setIsSyncingHistory((prev) => (prev ? false : prev));
-    }, 45000);
+    }, 16000);
   };
 
   const handleToggleSubscribe = async (e) => {
