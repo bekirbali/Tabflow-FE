@@ -125,7 +125,7 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
       clearTimeout(extensionWatchdog);
       window.removeEventListener("message", onBridgeMessage);
       setIsSyncingHistory((prev) => (prev ? false : prev));
-    }, 16000);
+    }, 45000);
   };
 
   const handleToggleSubscribe = async (e) => {
