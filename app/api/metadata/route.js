@@ -85,6 +85,28 @@ export async function GET(request) {
     const parsedUrl = new URL(url);
     const domain = parsedUrl.hostname.toLowerCase();
     
+    // SSRF Koruması: Localhost, iç IP'ler ve cloud metadata servislerini engelle
+    if (
+      domain === "localhost" ||
+      domain === "127.0.0.1" ||
+      domain === "0.0.0.0" ||
+      domain === "::1" ||
+      domain.startsWith("10.") ||
+      domain.startsWith("192.168.") ||
+      domain.startsWith("172.16.") ||
+      domain.startsWith("172.17.") ||
+      domain.startsWith("172.18.") ||
+      domain.startsWith("172.19.") ||
+      domain.startsWith("172.2") ||
+      domain.startsWith("172.3") ||
+      domain === "169.254.169.254"
+    ) {
+      return NextResponse.json(
+        { error: "Güvenlik nedeniyle bu adrese erişim engellendi." },
+        { status: 403 }
+      );
+    }
+
     let type = "general";
     let source_name = domain.replace("www.", "");
     let title = "Bilinmeyen Başlık";

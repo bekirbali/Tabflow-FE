@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Inbox, Archive, Check, AlertCircle, AlertTriangle, HelpCircle, Heart, Bookmark } from "lucide-react";
+import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark } from "lucide-react";
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
 import ContentCard from "./components/ContentCard";
@@ -99,7 +99,7 @@ export default function Home() {
       if (currentUser) {
         setUser(currentUser);
         if (currentUser.api_key && typeof window !== "undefined") {
-          window.postMessage({ action: "tabflow_auth_success", apiKey: currentUser.api_key }, "*");
+          window.postMessage({ action: "tabflow_auth_success", apiKey: currentUser.api_key }, window.location.origin);
         }
         fetchCloudVideos();
       } else {
@@ -134,7 +134,6 @@ export default function Home() {
       addToast(`YouTube bağlanmasında hata oluştu: ${errDetail ? decodeURIComponent(errDetail) : "Bilinmeyen hata"}`, "error");
       window.history.replaceState({}, document.title, "/");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Extension Köprüsü Dinleyicisi (Anlık canlı senkronizasyon — 0ms gecikme)
@@ -210,10 +209,9 @@ export default function Home() {
 
     window.addEventListener("message", handleExtensionBridgeMessage);
     return () => window.removeEventListener("message", handleExtensionBridgeMessage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sekmeye her dönüşte arka planda sessizce yenile (extension ile eklenen videolar ve YouTube token dahil)
+  // Sekmeye her dönüşte ve eklentiden gelen sinyallerde arka planda sessizce yenile (0ms gecikmeli canlı senkronizasyon)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -230,14 +228,28 @@ export default function Home() {
       }
     };
 
+    // Eklenti tabflow_bridge.js'in localStorage'a yazdığı yeni link sinyalini yakala
+    const handleStorageChange = (e) => {
+      if (e.key === "tabflow_new_link_signal") {
+        silentRefreshVideos();
+      }
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("storage", handleStorageChange);
+    };
   }, []);
 
   // Reset infinite scroll page chunk when activeTab changes
   useEffect(() => {
-    setVisibleCount(ITEMS_PER_PAGE);
+    const timer = setTimeout(() => {
+      setVisibleCount(ITEMS_PER_PAGE);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [activeTab]);
 
   // Fetch from Django Cloud Database
@@ -756,15 +768,20 @@ export default function Home() {
       
       if (user) {
         try {
-          // Re-create on cloud database
-          const response = await api.addLink(restoredVideo);
+          // Re-create on cloud database preserving is_private
+          const response = await api.addLink({
+            ...restoredVideo,
+            is_private: restoredVideo.is_private || false
+          });
           const mapped = {
             ...restoredVideo,
-            id: response.id
+            id: response.id,
+            created_at: restoredVideo.created_at || response.created_at || new Date().toISOString()
           };
           setVideos((prev) => {
             const list = [...prev];
-            list.splice(lastAction.index, 0, mapped);
+            const insertIndex = Math.min(lastAction.index, list.length);
+            list.splice(insertIndex, 0, mapped);
             return list;
           });
           addToast("Silinen bağlantı geri yüklendi ↩️", "success");
@@ -774,7 +791,8 @@ export default function Home() {
       } else {
         setVideos((prev) => {
           const list = [...prev];
-          list.splice(lastAction.index, 0, restoredVideo);
+          const insertIndex = Math.min(lastAction.index, list.length);
+          list.splice(insertIndex, 0, restoredVideo);
           localStorage.setItem("tabflow_videos", JSON.stringify(list));
           return list;
         });
@@ -786,7 +804,7 @@ export default function Home() {
   const handleAuthSuccess = (loggedInUser) => {
     setUser(loggedInUser);
     if (loggedInUser?.api_key && typeof window !== "undefined") {
-      window.postMessage({ action: "tabflow_auth_success", apiKey: loggedInUser.api_key }, "*");
+      window.postMessage({ action: "tabflow_auth_success", apiKey: loggedInUser.api_key }, window.location.origin);
     }
     fetchCloudVideos();
   };
@@ -794,6 +812,8 @@ export default function Home() {
   const handleLogout = () => {
     api.logout();
     setUser(null);
+    setIsPrivateUnlocked(false);
+    setActiveTab("feed");
     loadLocalVideos();
     addToast("Oturum kapatıldı, yerel listeye dönüldü.", "success");
   };
@@ -906,7 +926,7 @@ export default function Home() {
   }, [isMounted, filteredVideos, displayedVideos, focusedIndex, isFocusOpen, selectedFocusLink, playingVideoId, hasMore, loadMore]);
 
   const pendingCount = useMemo(() => {
-    return videos.filter((v) => !(v.is_clean || v.is_watched)).length;
+    return videos.filter((v) => !(v.is_clean || v.is_watched) && !v.is_private).length;
   }, [videos]);
 
   if (!isMounted) {
@@ -932,6 +952,7 @@ export default function Home() {
           onLogoutClick={handleLogout}
           showKeyboardHelper={showKeyboardHelper}
           onToggleKeyboardHelper={() => setShowKeyboardHelper((v) => !v)}
+          isPrivateUnlocked={isPrivateUnlocked}
         />
 
         {/* Input paste link bar */}

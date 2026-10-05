@@ -4,12 +4,15 @@ import React, { useState, useEffect } from "react";
 import { Inbox, Archive, Heart, Layers, User, LogOut, Key, Copy, Check, Keyboard, Play, Link2Off } from "lucide-react";
 import { isYouTubeConnected, clearYouTubeTokens } from "../utils/youtube-auth";
 
-export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick, showKeyboardHelper, onToggleKeyboardHelper }) {
+export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick, showKeyboardHelper, onToggleKeyboardHelper, isPrivateUnlocked = false }) {
   const [copied, setCopied] = useState(false);
   const [ytConnected, setYtConnected] = useState(false);
 
   useEffect(() => {
-    setYtConnected(isYouTubeConnected());
+    const timer = setTimeout(() => {
+      setYtConnected(isYouTubeConnected());
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleYouTubeConnect = () => {
@@ -20,11 +23,14 @@ export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick,
     clearYouTubeTokens();
     setYtConnected(false);
   };
-  const total = videos.length;
+
+  // Gizli sekme açık değilse gizli linkleri sayaçlara ve Inbox Zero oranına dahil etme
+  const visibleVideos = videos.filter((v) => isPrivateUnlocked ? true : !v.is_private);
+  const total = visibleVideos.length;
   // Handle both is_clean and is_watched for backend/frontend compatibility
-  const watched = videos.filter((v) => v.is_clean || v.is_watched).length;
+  const watched = visibleVideos.filter((v) => v.is_clean || v.is_watched).length;
   const pending = total - watched;
-  const liked = videos.filter((v) => v.liked).length;
+  const liked = visibleVideos.filter((v) => v.liked).length;
   const inboxZeroRate = total > 0 ? Math.round((watched / total) * 100) : 100;
 
   // SVG parameters for radial progress

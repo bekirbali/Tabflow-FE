@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   MessageSquare, ThumbsUp, AlertCircle, 
   MessageSquareOff, RefreshCw, Sparkles, User, ExternalLink,
@@ -46,10 +46,13 @@ export default function YouTubeComments({ videoId, addToast }) {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    setIsConnected(isYouTubeConnected());
+    const timer = setTimeout(() => {
+      setIsConnected(isYouTubeConnected());
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     if (!videoId) return;
     setLoading(true);
     setError(null);
@@ -75,11 +78,18 @@ export default function YouTubeComments({ videoId, addToast }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [videoId]);
 
   useEffect(() => {
-    fetchComments();
-  }, [videoId]);
+    let isCancelled = false;
+    const timer = setTimeout(() => {
+      if (!isCancelled) fetchComments();
+    }, 0);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [fetchComments]);
 
   const handlePostComment = async (e) => {
     if (e && e.preventDefault) e.preventDefault();

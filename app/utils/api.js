@@ -27,14 +27,23 @@ async function request(endpoint, options = {}) {
   try {
     const response = await fetch(url, config);
     
-    // Handle 204 No Content for DELETE requests
-    if (response.status === 204) {
-      return { success: true };
+    let data;
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(`Sunucu Hatası (${response.status}): Servise ulaşılamıyor.`);
+      }
+      data = { message: text };
     }
 
-    const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error || data.detail || Object.values(data).flat().join(" ") || "Bir hata oluştu.");
+      const errMsg = (data && (data.error || data.detail)) || 
+        (typeof data === "object" ? Object.values(data).flat().join(" ") : null) || 
+        "Bir hata oluştu.";
+      throw new Error(errMsg);
     }
     return data;
   } catch (error) {
@@ -133,6 +142,7 @@ export const api = {
     if (fields.watched_at !== undefined) payload.watched_at = fields.watched_at;
     if (fields.liked !== undefined) payload.liked = fields.liked;
     if (fields.bookmarked !== undefined) payload.bookmarked = fields.bookmarked;
+    if (fields.is_private !== undefined) payload.is_private = fields.is_private;
     if (fields.title !== undefined) payload.title = fields.title;
     if (fields.metadata !== undefined) payload.metadata = fields.metadata;
 
@@ -161,6 +171,7 @@ export const api = {
       watched_at: v.watched_at || null,
       liked: v.liked || false,
       bookmarked: v.bookmarked || false,
+      is_private: v.is_private || false,
       duration: v.duration || "0:00",
       metadata: v.metadata || {},
       curator: v.curator || "@feed_master",
