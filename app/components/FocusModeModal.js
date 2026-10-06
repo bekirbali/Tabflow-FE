@@ -204,9 +204,15 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
             }
           }
-          if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
+          // Video tamamen bittiğinde (playerState: 0) kaydı temizle
+          // ÖNEMLİ: Burada setInitialStartSec(0) çağırmıyoruz! Çağrılırsa iframe'in src prop'u
+          // değişir ve tarayıcı iframe'i baştan yükleyip autoplay ile videoyu 0'dan yeniden başlatır.
+          const isEnded =
+            (data.event === "infoDelivery" && data.info && data.info.playerState === 0) ||
+            (data.event === "onStateChange" && (data.info === 0 || data.data === 0));
+
+          if (isEnded) {
             localStorage.removeItem(`yt_progress_${video_id}`);
-            setInitialStartSec(0);
           }
         }
       } catch (e) {}

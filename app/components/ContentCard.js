@@ -266,11 +266,15 @@ export default function ContentCard({
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
             }
           }
-          // Video tamamen bittiğinde (playerState: 0) kaydı temizle
-          if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
+          // Video tamamen bittiğinde (playerState: 0) kaydı temizle ve oynatmayı durdur
+          const isEnded =
+            (data.event === "infoDelivery" && data.info && data.info.playerState === 0) ||
+            (data.event === "onStateChange" && (data.info === 0 || data.data === 0));
+
+          if (isEnded) {
             localStorage.removeItem(`yt_progress_${video_id}`);
             setSavedProgress(0);
-            setInitialStartSec(0);
+            setIsPlaying(false);
           }
         }
       } catch (e) {}
