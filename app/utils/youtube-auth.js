@@ -361,3 +361,136 @@ export async function postCommentToYouTube({ videoId, text }) {
   }
 }
 
+/**
+ * YouTube'da bir yoruma alt yanıt (reply) gönder.
+ * @param {{ parentId: string, text: string }} param0
+ * @returns {Promise<{ success: boolean, comment?: object, error?: string, needsReconnect?: boolean, notConnected?: boolean }>}
+ */
+export async function replyToCommentOnYouTube({ parentId, text }) {
+  const accessToken = await getValidYouTubeAccessToken();
+  if (!accessToken) return { success: false, notConnected: true, needsReconnect: true };
+
+  try {
+    const res = await fetch("/api/youtube/comments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentId, text, accessToken }),
+    });
+
+    const data = await res.json();
+
+    if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
+      const newToken = await refreshYouTubeToken();
+      if (!newToken) return { success: false, needsReconnect: true };
+
+      const retryRes = await fetch("/api/youtube/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentId, text, accessToken: newToken }),
+      });
+      return await retryRes.json();
+    }
+
+    return data;
+  } catch (err) {
+    console.error("replyToCommentOnYouTube error:", err);
+    return { success: false, error: "Bağlantı hatası." };
+  }
+}
+
+/**
+ * YouTube'da kullanıcının bir yorumunu veya yanıtını sil.
+ * @param {string} commentId
+ * @returns {Promise<{ success: boolean, error?: string, needsReconnect?: boolean, notConnected?: boolean }>}
+ */
+export async function deleteCommentOnYouTube(commentId) {
+  const accessToken = await getValidYouTubeAccessToken();
+  if (!accessToken) return { success: false, notConnected: true, needsReconnect: true };
+
+  try {
+    const res = await fetch("/api/youtube/comments", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commentId, accessToken }),
+    });
+
+    const data = await res.json();
+
+    if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
+      const newToken = await refreshYouTubeToken();
+      if (!newToken) return { success: false, needsReconnect: true };
+
+      const retryRes = await fetch("/api/youtube/comments", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId, accessToken: newToken }),
+      });
+      return await retryRes.json();
+    }
+
+    return data;
+  } catch (err) {
+    console.error("deleteCommentOnYouTube error:", err);
+    return { success: false, error: "Bağlantı hatası." };
+  }
+}
+
+/**
+ * Bir yorumun alt yanıtlarını getir.
+ * @param {string} parentId
+ * @returns {Promise<{ success: boolean, replies?: Array, error?: string }>}
+ */
+export async function fetchCommentReplies(parentId) {
+  try {
+    const res = await fetch(`/api/youtube/comments?parentId=${encodeURIComponent(parentId)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || "Yanıtlar alınamadı." };
+    }
+    return data;
+  } catch (err) {
+    console.error("fetchCommentReplies error:", err);
+    return { success: false, error: "Bağlantı hatası." };
+  }
+}
+
+/**
+ * Giriş yapan kullanıcının YouTube kanal profilini döner.
+ * Yerel hafızaya (localStorage) önbelleğe alır.
+ * @returns {Promise<{ channelId?: string, title?: string, avatar?: string } | null>}
+ */
+export async function getYouTubeUserProfile() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const cached = localStorage.getItem("yt_user_profile");
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {}
+    }
+
+    const accessToken = await getValidYouTubeAccessToken();
+    if (!accessToken) return null;
+
+    const res = await fetch(`/api/youtube/me?accessToken=${encodeURIComponent(accessToken)}`);
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data.success && data.channelId) {
+      const profile = {
+        channelId: data.channelId,
+        title: data.title,
+        avatar: data.avatar,
+      };
+      localStorage.setItem("yt_user_profile", JSON.stringify(profile));
+      return profile;
+    }
+    return null;
+  } catch (err) {
+    console.debug("getYouTubeUserProfile error:", err);
+    return null;
+  }
+}
+
+

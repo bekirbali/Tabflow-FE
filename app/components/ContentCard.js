@@ -34,6 +34,10 @@ export default function ContentCard({
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [channelTitle, setChannelTitle] = useState("");
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [isCommentsClosing, setIsCommentsClosing] = useState(false);
+  const [isCommentsAnimated, setIsCommentsAnimated] = useState(false);
+  const [detachOrigin, setDetachOrigin] = useState({ deltaX: -360, deltaY: 0 });
+  const cardRef = React.useRef(null);
   const iframeRef = React.useRef(null);
 
   // Normalize properties for backward compatibility
@@ -176,21 +180,80 @@ export default function ContentCard({
     return () => window.removeEventListener("message", handleSyncMessage);
   }, [video_id]);
 
-  // Yorum modalı açıkken ESC tuşu ile kapatma ve arka plan kaydırmayı kilitleme
+  // Karttan ayrılma koordinatlarını hesaplayarak yorumları aç
+  const openComments = () => {
+    if (cardRef.current && typeof window !== "undefined") {
+      const isDesktop = window.innerWidth >= 768;
+      if (isDesktop) {
+        const cardRect = cardRef.current.getBoundingClientRect();
+        // Sağ panelin genişliği (yaklaşık 460px) ve sağ boşluğu (16px)
+        const panelWidth = Math.min(480, Math.max(380, window.innerWidth * 0.3));
+        const panelRight = 16;
+        const panelLeft = window.innerWidth - panelRight - panelWidth;
+        // Kartın sağ kenarından panelin sol kenarına olan mesafe (karttan başlama noktası)
+        const deltaX = Math.round(cardRect.right - panelLeft);
+        const deltaY = Math.round(cardRect.top - 16);
+        setDetachOrigin({ deltaX, deltaY });
+      }
+    }
+    setIsCommentsClosing(false);
+    setIsCommentsAnimated(false);
+    setIsCommentsOpen(true);
+    window.dispatchEvent(
+      new CustomEvent("tabflow_open_comments", { detail: { id } })
+    );
+  };
+
+  // Yorumları kartın içine geri çekilerek kapat
+  const closeComments = () => {
+    if (cardRef.current && typeof window !== "undefined" && window.innerWidth >= 768) {
+      const cardRect = cardRef.current.getBoundingClientRect();
+      const panelWidth = Math.min(480, Math.max(380, window.innerWidth * 0.3));
+      const panelRight = 16;
+      const panelLeft = window.innerWidth - panelRight - panelWidth;
+      const deltaX = Math.round(cardRect.right - panelLeft);
+      const deltaY = Math.round(cardRect.top - 16);
+      setDetachOrigin({ deltaX, deltaY });
+    }
+    setIsCommentsAnimated(false);
+    setIsCommentsClosing(true);
+    setTimeout(() => {
+      setIsCommentsOpen(false);
+      setIsCommentsClosing(false);
+    }, 320);
+  };
+
+  // Açılışta bir sonraki frame'de karttan ayrılma animasyonunu tetikle
+  useEffect(() => {
+    if (isCommentsOpen && !isCommentsClosing) {
+      const rAF = requestAnimationFrame(() => {
+        setIsCommentsAnimated(true);
+      });
+      return () => cancelAnimationFrame(rAF);
+    }
+  }, [isCommentsOpen, isCommentsClosing]);
+
+  // Diğer kartlardan yorum açıldığında bu kartın panelini kapat
+  useEffect(() => {
+    const handleOtherCardComments = (e) => {
+      if (e.detail?.id !== id && isCommentsOpen) {
+        closeComments();
+      }
+    };
+    window.addEventListener("tabflow_open_comments", handleOtherCardComments);
+    return () => window.removeEventListener("tabflow_open_comments", handleOtherCardComments);
+  }, [id, isCommentsOpen]);
+
+  // Yorum paneli açıkken ESC tuşu ile kapatma
   useEffect(() => {
     if (!isCommentsOpen) return;
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
-        setIsCommentsOpen(false);
+        closeComments();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = originalOverflow;
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isCommentsOpen]);
 
   // YouTube Geçmişine Sessizce Eşitleme Tetikleyicisi
@@ -407,6 +470,7 @@ export default function ContentCard({
 
   return (
     <article
+      ref={cardRef}
       className={`relative flex flex-col bg-zinc-900/80 border rounded-2xl md:rounded-3xl overflow-hidden shadow-xl transition-all duration-300 ease-out ${
         isFocused 
           ? "border-violet-500 shadow-2xl shadow-violet-500/20 ring-2 ring-violet-500/30 scale-[1.01] bg-zinc-900" 
@@ -743,10 +807,18 @@ export default function ContentCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setIsCommentsOpen(true);
+                if (isCommentsOpen) {
+                  closeComments();
+                } else {
+                  openComments();
+                }
               }}
-              title="YouTube Yorumları & Yorum Gönder"
-              className="p-2.5 rounded-xl transition-all duration-300 active:scale-90 flex items-center justify-center cursor-pointer text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 border border-transparent hover:border-blue-500/20"
+              title={isCommentsOpen ? "Yorumları Kapat" : "YouTube Yorumları (Karttan Ayrılma Efekti)"}
+              className={`p-2.5 rounded-xl transition-all duration-300 active:scale-90 flex items-center justify-center cursor-pointer border ${
+                isCommentsOpen
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/40 border-blue-400/50"
+                  : "text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 border-transparent hover:border-blue-500/20"
+              }`}
             >
               <MessageSquare className="h-5 w-5" />
             </button>
@@ -785,60 +857,52 @@ export default function ContentCard({
         </div>
       </div>
 
-      {/* YouTube Comments Modal rendered into body via Portal */}
+      {/* YouTube Comments Panel (Video kartından ayrılarak sağa kayma efekti) */}
       {isCommentsOpen && type === "video" && video_id && typeof document !== "undefined"
         ? createPortal(
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsCommentsOpen(false);
-              }}
-              className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-zinc-950/80 backdrop-blur-md animate-fadeIn cursor-pointer"
-            >
+            <>
+              {/* Mobil görünüm için hafif arka plan katmanı */}
               <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeComments();
+                }}
+                className={`md:hidden fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm cursor-pointer transition-opacity duration-300 ${
+                  isCommentsAnimated && !isCommentsClosing ? "opacity-100" : "opacity-0"
+                }`}
+              />
+
+              {/* Karttan ayrılarak sağ boşluğa geçen yorum çekmecesi */}
+              <aside
                 onClick={(e) => e.stopPropagation()}
-                className="relative w-full max-w-xl h-[84vh] max-h-[720px] bg-zinc-900 border border-white/10 rounded-2xl md:rounded-3xl shadow-2xl shadow-black/80 flex flex-col overflow-hidden animate-scaleIn cursor-default"
+                style={{
+                  transform:
+                    typeof window !== "undefined" && window.innerWidth < 768
+                      ? isCommentsAnimated && !isCommentsClosing
+                        ? "translate3d(0, 0, 0)"
+                        : "translate3d(0, 100%, 0)"
+                      : isCommentsAnimated && !isCommentsClosing
+                      ? "translate3d(0, 0, 0) scale(1)"
+                      : `translate3d(${detachOrigin.deltaX}px, ${detachOrigin.deltaY * 0.12}px, 0) scale(0.92)`,
+                  opacity: isCommentsAnimated && !isCommentsClosing ? 1 : 0,
+                  transformOrigin: "left center",
+                  transition:
+                    "transform 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 320ms cubic-bezier(0.16, 1, 0.3, 1), filter 320ms ease-out",
+                  filter: isCommentsAnimated && !isCommentsClosing ? "blur(0px)" : "blur(4px)",
+                }}
+                className="fixed inset-x-2 bottom-2 top-14 md:inset-x-auto md:top-3 md:bottom-3 md:right-3 z-[100] w-auto md:w-[420px] lg:w-[460px] xl:w-[490px] bg-zinc-950/95 backdrop-blur-2xl border border-white/10 rounded-2xl md:rounded-3xl shadow-2xl shadow-black/90 flex flex-col overflow-hidden cursor-default will-change-transform"
               >
-                {/* Modal Header */}
-                <div className="flex items-center justify-between p-4 px-5 border-b border-white/10 bg-zinc-950/90 shrink-0">
-                  <div className="flex items-center gap-3 min-w-0 pr-4">
-                    <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
-                      <MessageSquare className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex flex-col">
-                      <span className="text-sm font-bold text-zinc-100 truncate">
-                        {title}
-                      </span>
-                      <span className="text-xs text-zinc-400 truncate">
-                        {source_name}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-white/5 hidden sm:inline">
-                      ESC
-                    </span>
-                    <button
-                      onClick={() => setIsCommentsOpen(false)}
-                      title="Kapat (ESC)"
-                      className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Modal Comments Component */}
                 <div className="flex-1 overflow-hidden">
                   <YouTubeComments
                     videoId={video_id}
                     addToast={addToast}
                     totalCommentCount={metadata.comment_count || metadata.commentCount}
+                    onClose={closeComments}
+                    videoTitle={title}
                   />
                 </div>
-              </div>
-            </div>,
+              </aside>
+            </>,
             document.body
           )
         : null}
