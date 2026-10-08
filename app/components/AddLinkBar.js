@@ -67,7 +67,7 @@ export default function AddLinkBar({ onAddLink, addToast, onSecretUnlock }) {
         url: targetUrl,
         type: ytId ? "video" : (data.type || "general"),
         title: data.title || "Yeni Bağlantı",
-        source_name: ytId ? "YouTube" : (data.source_name || "Bilinmeyen Kaynak"),
+        source_name: data.source_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
         video_id: ytId || data.video_id || null,
         duration: data.metadata?.duration || data.duration || "0:00",
         metadata: data.metadata || {},

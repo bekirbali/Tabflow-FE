@@ -22,7 +22,9 @@ export default function ContentCard({
   onFocusClick, // Callback to open Focus Mode modal
   isFocused, // Keyboard navigation state
   onPlayStart, // Callback when playback starts
-  addToast
+  addToast,
+  onAddToFeed,
+  isInFeed
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
@@ -46,10 +48,12 @@ export default function ContentCard({
   const video_id = video.video_id || video.videoId || video.metadata?.video_id || getYouTubeId(url);
   const type = video_id ? "video" : (video.type || video.metadata?.type || "general");
   const title = video.title || video.metadata?.title || (video_id ? "YouTube Videosu" : "Başlıksız Link");
-  const source_name = video.source_name || video.author_name || video.metadata?.source_name || (video_id ? "YouTube" : "Bilinmeyen Kaynak");
-  const is_clean = video.is_clean !== undefined ? video.is_clean : video.is_watched;
-  
   const metadata = video.metadata || {};
+  const channel_name = channelTitle || video.channelTitle || metadata.channelTitle || metadata.channel_title || metadata.author_name || video.author_name;
+  const source_name = (type === "video" && video_id)
+    ? (channel_name || (video.source_name && video.source_name !== "YouTube" ? video.source_name : "YouTube"))
+    : (video.source_name || video.author_name || video.metadata?.source_name || "Bilinmeyen Kaynak");
+  const is_clean = video.is_clean !== undefined ? video.is_clean : video.is_watched;
   const duration = (video.duration && video.duration !== "0:00") 
     ? video.duration 
     : (metadata.duration && metadata.duration !== "0:00") 
@@ -125,6 +129,21 @@ export default function ContentCard({
               if (res && res.success && typeof res.subscribed === "boolean") {
                 setIsSubscribed(res.subscribed);
                 if (res.channelTitle) setChannelTitle(res.channelTitle);
+              }
+            })
+            .catch(() => {});
+        }
+
+        // Kanal adını oEmbed ile dinamik tamamla (eğer mevcut değilse)
+        const existingChannel = video.channelTitle || metadata?.channelTitle || metadata?.channel_title || metadata?.author_name || (video.source_name && video.source_name !== "YouTube" ? video.source_name : null);
+        if (existingChannel) {
+          setChannelTitle(existingChannel);
+        } else {
+          fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${video_id}&format=json`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data?.author_name) {
+                setChannelTitle(data.author_name);
               }
             })
             .catch(() => {});
@@ -515,6 +534,12 @@ export default function ContentCard({
         </div>
 
         <div className="flex items-center gap-2">
+          {metadata?.discoveryLabel && metadata?.discoveryReason !== "channel" && (
+            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-1">
+              <span>{metadata.discoveryReason === "popular" ? "🔥" : "✨"}</span>
+              <span className="truncate max-w-[140px]">{metadata.discoveryLabel}</span>
+            </span>
+          )}
           {type === "article" && read_time && (
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400">
               {read_time}
@@ -852,6 +877,35 @@ export default function ContentCard({
             >
               <RotateCcw className="h-4 w-4" />
               <span>Geri Al</span>
+            </button>
+          )}
+
+          {activeTab === "discover" && onAddToFeed && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!isInFeed) {
+                  onAddToFeed(video);
+                }
+              }}
+              disabled={isInFeed}
+              className={`flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-bold transition-all active:scale-97 select-none cursor-pointer shadow-sm ${
+                isInFeed
+                  ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 cursor-default opacity-90"
+                  : "text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/30 shadow-blue-950/40"
+              }`}
+            >
+              {isInFeed ? (
+                <>
+                  <Check className="h-4 w-4 stroke-[2.5]" />
+                  <span>Eklendi</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 stroke-[2.5]" />
+                  <span>Akışıma Ekle</span>
+                </>
+              )}
             </button>
           )}
         </div>

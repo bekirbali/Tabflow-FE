@@ -493,4 +493,57 @@ export async function getYouTubeUserProfile() {
   }
 }
 
+/**
+ * Keşfet (Discover) motorundan hibrit önerilen videoları çeker.
+ */
+export async function fetchDiscoverVideos({
+  channels = [],
+  topics = [],
+  includeSubscriptions = true,
+  excludeVideoIds = [],
+  page = 1,
+} = {}) {
+  try {
+    const accessToken = await getValidYouTubeAccessToken();
+    const res = await fetch("/api/youtube/discover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channels,
+        topics,
+        accessToken: accessToken || undefined,
+        includeSubscriptions,
+        excludeVideoIds,
+        page,
+      }),
+    });
+
+    if (!res.ok) {
+      return [];
+    }
+
+    const data = await res.json();
+    return Array.isArray(data.videos) ? data.videos : [];
+  } catch (err) {
+    console.error("fetchDiscoverVideos error:", err);
+    return [];
+  }
+}
+
+/**
+ * YouTube kanallarını ada göre arar.
+ */
+export async function searchYouTubeChannels(query) {
+  if (!query || !query.trim()) return [];
+  try {
+    const res = await fetch(`/api/youtube/discover?searchChannel=${encodeURIComponent(query.trim())}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.channels || [];
+  } catch (err) {
+    console.error("searchYouTubeChannels error:", err);
+    return [];
+  }
+}
+
 

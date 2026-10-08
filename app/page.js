@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark } from "lucide-react";
+import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark, Compass, SlidersHorizontal, RefreshCw } from "lucide-react";
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
 import ContentCard from "./components/ContentCard";
 import SkeletonCard from "./components/SkeletonCard";
 import FocusModeModal from "./components/FocusModeModal";
 import AuthModal from "./components/AuthModal";
+import TrackedChannelsModal from "./components/TrackedChannelsModal";
 import { api } from "./utils/api";
 import {
   getInitialSeedVideos,
@@ -19,6 +20,7 @@ import {
   getValidYouTubeAccessToken,
   rateVideoOnYouTube,
   toggleWatchLater,
+  fetchDiscoverVideos,
 } from "./utils/youtube-auth";
 
 const ITEMS_PER_PAGE = 20;
@@ -46,13 +48,24 @@ const normalizeUrl = (rawUrl) => {
 
 export default function Home() {
   const [videos, setVideos] = useState([]); // Represents our links/tabs stream
-  const [activeTab, setActiveTab] = useState("feed"); // "feed" | "watched" | "private"
+  const [activeTab, setActiveTab] = useState("feed"); // "feed" | "discover" | "watched" | "liked" | "saved" | "private"
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE); // Infinite scroll chunking (20 at a time)
   const loadMoreRef = useRef(null);
   const [isPrivateUnlocked, setIsPrivateUnlocked] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Discover state
+  const [discoverVideos, setDiscoverVideos] = useState([]);
+  const [isDiscoverLoading, setIsDiscoverLoading] = useState(false);
+  const [discoverPage, setDiscoverPage] = useState(1);
+  const [hasMoreDiscover, setHasMoreDiscover] = useState(true);
+  const [isDiscoverLoadingMore, setIsDiscoverLoadingMore] = useState(false);
+  const [isChannelsModalOpen, setIsChannelsModalOpen] = useState(false);
+  const [discoverFilter, setDiscoverFilter] = useState("all"); // "all" | "channels" | "topics"
+  const [trackedChannels, setTrackedChannels] = useState([]);
+  const [trackedTopics, setTrackedTopics] = useState([]);
   
   // Auth state
   const [user, setUser] = useState(null);
@@ -104,6 +117,24 @@ export default function Home() {
         fetchCloudVideos();
       } else {
         loadLocalVideos();
+      }
+
+      // Load tracked channels and topics from localStorage
+      try {
+        const storedChannels = localStorage.getItem("tabflow_tracked_channels");
+        if (storedChannels) {
+          setTrackedChannels(JSON.parse(storedChannels));
+        }
+        const storedTopics = localStorage.getItem("tabflow_tracked_topics");
+        if (storedTopics) {
+          setTrackedTopics(JSON.parse(storedTopics));
+        } else {
+          const defaultTopics = ["React", "Web Development", "AI Tools"];
+          setTrackedTopics(defaultTopics);
+          localStorage.setItem("tabflow_tracked_topics", JSON.stringify(defaultTopics));
+        }
+      } catch (e) {
+        console.error("Local preferences load error:", e);
       }
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,7 +196,7 @@ export default function Home() {
           url: rawLink.url,
           type: ytId ? "video" : (rawLink.type || "general"),
           title: rawLink.title || "YouTube Video",
-          source_name: ytId ? "YouTube" : (rawLink.source_name || rawLink.author_name || "YouTube"),
+          source_name: rawLink.source_name || rawLink.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
           is_clean: isClean,
           is_watched: isClean,
           watched_at: watchedAt,
@@ -244,13 +275,13 @@ export default function Home() {
     };
   }, []);
 
-  // Reset infinite scroll page chunk when activeTab changes
+  // Reset infinite scroll page chunk when activeTab or discoverFilter changes
   useEffect(() => {
     const timer = setTimeout(() => {
       setVisibleCount(ITEMS_PER_PAGE);
     }, 0);
     return () => clearTimeout(timer);
-  }, [activeTab]);
+  }, [activeTab, discoverFilter]);
 
   // Fetch from Django Cloud Database
   async function fetchCloudVideos() {
@@ -285,7 +316,7 @@ export default function Home() {
                  url: v.url,
                  type: ytId ? "video" : (v.type || "general"),
                  title: v.title,
-                 source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
+                 source_name: v.source_name || v.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
                  is_clean: isClean,
                  is_watched: isClean,
                  watched_at: watchedAt,
@@ -324,7 +355,7 @@ export default function Home() {
           url: v.url,
           type: ytId ? "video" : (v.type || "general"),
           title: v.title,
-          source_name: ytId ? "YouTube" : (v.source_name || v.author_name || "Bilinmeyen Kaynak"),
+          source_name: v.source_name || v.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
           is_clean: isClean,
           is_watched: isClean,
           watched_at: v.watched_at || (isClean ? v.created_at : null),
@@ -393,12 +424,164 @@ export default function Home() {
     }, 3500);
   }
 
+  // Keşfet akışını yükle
+  const loadDiscoverFeed = useCallback(async (forcedChannels, forcedTopics) => {
+    setIsDiscoverLoading(true);
+    setDiscoverPage(1);
+    setHasMoreDiscover(true);
+    try {
+      const channelsToUse = forcedChannels !== undefined ? forcedChannels : trackedChannels;
+      const topicsToUse = forcedTopics !== undefined ? forcedTopics : trackedTopics;
+
+      // Zaten akışta veya izlenmiş olan video ID'lerini hariç tut
+      const excludeVideoIds = videos
+        .map((v) => v.video_id || v.videoId)
+        .filter(Boolean);
+
+      const results = await fetchDiscoverVideos({
+        channels: channelsToUse,
+        topics: topicsToUse,
+        includeSubscriptions: isYouTubeConnected(),
+        excludeVideoIds,
+        page: 1,
+      });
+
+      const videoList = Array.isArray(results) ? results : (results?.videos || []);
+      setDiscoverVideos(videoList);
+      setVisibleCount(ITEMS_PER_PAGE);
+      if (videoList.length === 0) {
+        setHasMoreDiscover(false);
+      }
+      if (videoList.length > 0) {
+        addToast(`Keşfet güncellendi (${videoList.length} öneri) ✨`, "success");
+      }
+    } catch (err) {
+      console.error("Discover fetch error:", err);
+      addToast("Keşfet akışı alınırken hata oluştu.", "error");
+    } finally {
+      setIsDiscoverLoading(false);
+    }
+  }, [trackedChannels, trackedTopics, videos]);
+
+  // Keşfet için sonsuz kaydırma (Infinite Scroll) - yeni sayfayı arka planda getir
+  const loadMoreDiscover = useCallback(async () => {
+    if (isDiscoverLoading || isDiscoverLoadingMore || !hasMoreDiscover) return;
+    setIsDiscoverLoadingMore(true);
+    try {
+      const nextPage = discoverPage + 1;
+      const channelsToUse = trackedChannels;
+      const topicsToUse = trackedTopics;
+
+      // Hem mevcut inbox/arşiv videolarını hem de halihazırda keşfedilmiş videoları hariç tut
+      const currentDiscIds = (Array.isArray(discoverVideos) ? discoverVideos : [])
+        .map((v) => v.video_id || v.videoId)
+        .filter(Boolean);
+      const inboxIds = (Array.isArray(videos) ? videos : [])
+        .map((v) => v.video_id || v.videoId)
+        .filter(Boolean);
+      const excludeVideoIds = Array.from(new Set([...inboxIds, ...currentDiscIds]));
+
+      const results = await fetchDiscoverVideos({
+        channels: channelsToUse,
+        topics: topicsToUse,
+        includeSubscriptions: isYouTubeConnected(),
+        excludeVideoIds,
+        page: nextPage,
+      });
+
+      const videoList = Array.isArray(results) ? results : (results?.videos || []);
+      if (videoList.length === 0) {
+        setHasMoreDiscover(false);
+      } else {
+        setDiscoverVideos((prev) => {
+          const existingIds = new Set(prev.map((v) => v.videoId || v.video_id));
+          const fresh = videoList.filter((v) => !existingIds.has(v.videoId || v.video_id));
+          return [...prev, ...fresh];
+        });
+        setDiscoverPage(nextPage);
+        setVisibleCount((prev) => prev + ITEMS_PER_PAGE);
+      }
+    } catch (err) {
+      console.error("loadMoreDiscover error:", err);
+    } finally {
+      setIsDiscoverLoadingMore(false);
+    }
+  }, [discoverPage, hasMoreDiscover, isDiscoverLoading, isDiscoverLoadingMore, trackedChannels, trackedTopics, discoverVideos, videos]);
+
+  // Keşfet tabı seçildiğinde ilk yüklemeyi otomatik yap
+  useEffect(() => {
+    if (activeTab === "discover" && discoverVideos.length === 0 && !isDiscoverLoading) {
+      loadDiscoverFeed();
+    }
+  }, [activeTab, discoverVideos.length, isDiscoverLoading, loadDiscoverFeed]);
+
+  // Süre metnini saniyeye çevirir (Örn: "0:25" -> 25, "1:15" -> 75, "PT45S" -> 45)
+  const parseDurationToSeconds = useCallback((dur) => {
+    if (!dur) return 0;
+    if (typeof dur === "number") return dur;
+    const str = String(dur).trim();
+    if (str.startsWith("PT")) {
+      const match = str.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (!match) return 0;
+      const h = parseInt(match[1] || 0, 10);
+      const m = parseInt(match[2] || 0, 10);
+      const s = parseInt(match[3] || 0, 10);
+      return h * 3600 + m * 60 + s;
+    }
+    if (str.includes(":")) {
+      const parts = str.split(":").map((p) => parseInt(p.trim(), 10) || 0);
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
+  }, []);
+
+  // Helper: Video'nun Shorts olup olmadığını tespit et (Doğru ve kesin kontrol)
+  const isVideoShorts = useCallback((v) => {
+    if (!v) return false;
+    // 1. Backend HEAD redirect ile doğrulanmış kesin dikey shorts bayrağı
+    if (v.is_shorts === true || v.metadata?.is_shorts === true) return true;
+    if (v.is_shorts === false && v.metadata?.is_shorts === false) return false;
+    if (v.category === "Shorts" || v.metadata?.category === "Shorts") return true;
+
+    // 2. Açıkça Shorts URL'si veya #shorts etiketi
+    const url = (v.url || v.metadata?.url || "").toLowerCase();
+    if (url.includes("/shorts/")) return true;
+
+    const title = (v.title || v.metadata?.title || "").toLowerCase();
+    const desc = (v.description || v.metadata?.description || "").toLowerCase();
+    if (title.includes("#shorts") || desc.includes("#shorts")) return true;
+
+    // Süreye bakılarak yatay videolar asla Shorts yapılmaz
+    return false;
+  }, []);
+
+  const shortsCount = useMemo(() => {
+    return (Array.isArray(discoverVideos) ? discoverVideos : []).filter(isVideoShorts).length;
+  }, [discoverVideos, isVideoShorts]);
+
   // Calculate filtered lists based on active tab with proper ordering
   const filteredVideos = useMemo(() => {
     if (activeTab === "feed") {
       return videos
         .filter((v) => !(v.is_clean || v.is_watched) && !v.is_private)
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    }
+    if (activeTab === "discover") {
+      const list = Array.isArray(discoverVideos) ? discoverVideos : [];
+      if (discoverFilter === "shorts") {
+        return list.filter(isVideoShorts);
+      }
+      
+      // Standart sekmeler (Tümü, Kanallar, İlgi Alanları) Shorts videolarını tamamen dışlar
+      const nonShorts = list.filter((v) => !isVideoShorts(v));
+      if (discoverFilter === "channels") {
+        return nonShorts.filter((v) => v.metadata?.discoveryReason === "channel");
+      }
+      if (discoverFilter === "topics") {
+        return nonShorts.filter((v) => v.metadata?.discoveryReason === "topic");
+      }
+      return nonShorts;
     }
     if (activeTab === "watched") {
       // Watched tab: most recently watched video goes to the top!
@@ -426,18 +609,35 @@ export default function Home() {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     return [];
-  }, [videos, activeTab]);
+  }, [videos, activeTab, discoverVideos, discoverFilter, isVideoShorts]);
 
   // Paginated/Chunked items for infinite scroll (drastically improves performance with large archives)
   const displayedVideos = useMemo(() => {
+    if (!Array.isArray(filteredVideos)) return [];
     return filteredVideos.slice(0, visibleCount);
   }, [filteredVideos, visibleCount]);
 
-  const hasMore = visibleCount < filteredVideos.length;
+  const hasMore = useMemo(() => {
+    if (activeTab === "discover") {
+      const totalFiltered = Array.isArray(filteredVideos) ? filteredVideos.length : 0;
+      if (visibleCount < totalFiltered) return true;
+      return hasMoreDiscover;
+    }
+    return visibleCount < (Array.isArray(filteredVideos) ? filteredVideos.length : 0);
+  }, [activeTab, visibleCount, filteredVideos, hasMoreDiscover]);
 
   const loadMore = useCallback(() => {
-    setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, filteredVideos.length));
-  }, [filteredVideos.length]);
+    if (activeTab === "discover") {
+      const totalFiltered = Array.isArray(filteredVideos) ? filteredVideos.length : 0;
+      if (visibleCount < totalFiltered) {
+        setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, totalFiltered));
+      } else if (hasMoreDiscover && !isDiscoverLoadingMore && !isDiscoverLoading) {
+        loadMoreDiscover();
+      }
+      return;
+    }
+    setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, Array.isArray(filteredVideos) ? filteredVideos.length : 0));
+  }, [activeTab, visibleCount, filteredVideos, hasMoreDiscover, isDiscoverLoadingMore, isDiscoverLoading, loadMoreDiscover]);
 
   // Infinite scroll intersection observer
   useEffect(() => {
@@ -451,7 +651,7 @@ export default function Home() {
           loadMore();
         }
       },
-      { threshold: 0.1, rootMargin: "350px" }
+      { threshold: 0.1, rootMargin: "500px" }
     );
 
     observer.observe(target);
@@ -550,6 +750,28 @@ export default function Home() {
       localStorage.setItem("tabflow_videos", JSON.stringify(updated));
       addToast("Bağlantı yerel listeye eklendi.", "success");
     }
+  };
+
+  // Keşfet'ten ana akışa ekleme
+  const handleAddFromDiscover = async (video) => {
+    const isAlready = videos.some(
+      (v) =>
+        (v.video_id || v.videoId) === (video.video_id || video.videoId) ||
+        normalizeUrl(v.url) === normalizeUrl(video.url)
+    );
+    if (isAlready) {
+      addToast("Bu video zaten akışınızda bulunuyor! 📌", "info");
+      return;
+    }
+    await handleAddLink({
+      url: video.url,
+      type: "video",
+      title: video.title,
+      source_name: video.source_name || video.author_name || "YouTube",
+      video_id: video.video_id || video.videoId,
+      duration: video.duration || "0:00",
+      metadata: video.metadata || {},
+    });
   };
 
   // Like Link Handler
@@ -1052,6 +1274,24 @@ export default function Home() {
 
             <button
               onClick={() => {
+                setActiveTab("discover");
+                setFocusedIndex(-1);
+              }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 cursor-pointer ${
+                activeTab === "discover"
+                  ? "bg-gradient-to-tr from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/20"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              <Compass className="h-4 w-4" />
+              <span>Keşfet</span>
+              {discoverVideos.length > 0 && activeTab !== "discover" && (
+                <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+              )}
+            </button>
+
+            <button
+              onClick={() => {
                 setActiveTab("watched");
                 setFocusedIndex(-1);
               }}
@@ -1156,9 +1396,83 @@ export default function Home() {
 
         {/* Content Lists */}
         <main className="mt-2">
+          {/* Keşfet Üst Filtre & Yönetim Çubuğu */}
+          {activeTab === "discover" && (
+            <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-3 px-1">
+              <div className="flex items-center gap-1 bg-zinc-900/70 border border-white/5 p-1 rounded-xl">
+                <button
+                  onClick={() => setDiscoverFilter("all")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    discoverFilter === "all"
+                      ? "bg-zinc-800 text-cyan-400 shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Tümü
+                </button>
+                <button
+                  onClick={() => setDiscoverFilter("channels")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    discoverFilter === "channels"
+                      ? "bg-zinc-800 text-cyan-400 shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Kanallar {trackedChannels.length > 0 && `(${trackedChannels.length})`}
+                </button>
+                <button
+                  onClick={() => setDiscoverFilter("topics")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    discoverFilter === "topics"
+                      ? "bg-zinc-800 text-cyan-400 shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  İlgi Alanları {trackedTopics.length > 0 && `(${trackedTopics.length})`}
+                </button>
+                <button
+                  onClick={() => setDiscoverFilter("shorts")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    discoverFilter === "shorts"
+                      ? "bg-zinc-800 text-rose-400 shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  <span>Shorts</span>
+                  {shortsCount > 0 && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                      discoverFilter === "shorts" ? "bg-rose-500/20 text-rose-300" : "bg-zinc-800 text-zinc-400"
+                    }`}>
+                      {shortsCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsChannelsModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-900/70 hover:bg-zinc-800 border border-white/5 text-zinc-300 hover:text-white transition-all cursor-pointer"
+                  title="Takip Edilen Kanallar ve Konuları Yönet"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-cyan-400" />
+                  <span className="hidden sm:inline">Kanalları Yönet</span>
+                </button>
+                <button
+                  onClick={() => loadDiscoverFeed()}
+                  disabled={isDiscoverLoading}
+                  className="flex items-center justify-center p-2 rounded-xl text-xs font-semibold bg-zinc-900/70 hover:bg-zinc-800 border border-white/5 text-zinc-300 hover:text-cyan-400 transition-all cursor-pointer disabled:opacity-50"
+                  title="Keşfet Akışını Yenile"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isDiscoverLoading ? "animate-spin text-cyan-400" : ""}`} />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Inbox Feed and Archive Feed */}
           <div className="animate-fadeIn max-w-2xl mx-auto w-full">
-            {isLoading ? (
+            {isLoading || (activeTab === "discover" && isDiscoverLoading && discoverVideos.length === 0) ? (
               // Skeleton loading cards
               <div className="flex flex-col gap-6">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -1187,23 +1501,31 @@ export default function Home() {
                         setFocusedIndex(idx);
                       }}
                       addToast={addToast}
+                      onAddToFeed={activeTab === "discover" ? () => handleAddFromDiscover(video) : undefined}
+                      isInFeed={videos.some((v) => (v.video_id || v.videoId) === (video.video_id || video.videoId) || normalizeUrl(v.url) === normalizeUrl(video.url))}
                     />
                   </div>
                 ))}
 
                 {/* Infinite Scroll sentinel & loader */}
-                {hasMore && (
+                {(hasMore || isDiscoverLoadingMore) && (
                   <div ref={loadMoreRef} className="py-6 flex flex-col items-center justify-center gap-2">
                     <div className="h-6 w-6 border-2 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
-                    <span className="text-xs text-zinc-500 font-medium">Daha fazla içerik yükleniyor...</span>
+                    <span className="text-xs text-zinc-500 font-medium">
+                      {isDiscoverLoadingMore ? "Yeni keşifler aranıyor..." : "Daha fazla içerik yükleniyor..."}
+                    </span>
                   </div>
                 )}
 
                 {/* All items loaded indicator */}
-                {!hasMore && filteredVideos.length > ITEMS_PER_PAGE && (
+                {!hasMore && !isDiscoverLoadingMore && filteredVideos.length > ITEMS_PER_PAGE && (
                   <div className="py-8 text-center text-xs text-zinc-500 font-medium flex items-center justify-center gap-2">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/60" />
-                    <span>Tüm arşiv görüntülendi ({filteredVideos.length} içerik)</span>
+                    <span>
+                      {activeTab === "discover"
+                        ? `Tüm keşfet önerileri görüntülendi (${filteredVideos.length} içerik)`
+                        : `Tüm arşiv görüntülendi (${filteredVideos.length} içerik)`}
+                    </span>
                   </div>
                 )}
               </div>
@@ -1221,6 +1543,34 @@ export default function Home() {
                     <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
                       İşlem bekleyen tüm bağlantıları tamamlayıp <strong>Inbox Zero</strong> başarısına ulaştınız. Zihniniz artık tertemiz! 🎉
                     </p>
+                  </div>
+                ) : activeTab === "discover" ? (
+                  <div className="flex flex-col items-center max-w-md animate-fadeIn text-center">
+                    <div className="h-16 w-16 bg-cyan-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center mb-5 text-cyan-400 shadow-xl shadow-cyan-950/20">
+                      <Compass className="h-7 w-7" />
+                    </div>
+                    <h3 className="text-lg font-bold text-zinc-100">
+                      Keşfet Akışı Boş
+                    </h3>
+                    <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
+                      Takip ettiğin kanallardan ve ilgi alanlarından yeni video bulunamadı. Kanal listeni güncelleyebilir veya yeni konular ekleyebilirsin.
+                    </p>
+                    <div className="mt-5 flex items-center gap-3">
+                      <button
+                        onClick={() => setIsChannelsModalOpen(true)}
+                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-xl border border-white/5 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <SlidersHorizontal className="h-3.5 w-3.5 text-cyan-400" />
+                        Kanalları Yönet
+                      </button>
+                      <button
+                        onClick={() => loadDiscoverFeed()}
+                        className="px-4 py-2 bg-gradient-to-tr from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-cyan-600/20 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Yenile
+                      </button>
+                    </div>
                   </div>
                 ) : activeTab === "liked" ? (
                   <div className="flex flex-col items-center max-w-md animate-fadeIn">
@@ -1355,6 +1705,30 @@ export default function Home() {
         onSuccess={handleAuthSuccess}
         localVideosCount={user ? 0 : videos.length}
         addToast={addToast}
+      />
+
+      {/* Tracked Channels & Topics Manager Modal */}
+      <TrackedChannelsModal
+        isOpen={isChannelsModalOpen}
+        onClose={() => setIsChannelsModalOpen(false)}
+        trackedChannels={trackedChannels}
+        setTrackedChannels={(newChannels) => {
+          setTrackedChannels(newChannels);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("tabflow_tracked_channels", JSON.stringify(newChannels));
+          }
+        }}
+        topics={trackedTopics}
+        setTopics={(newTopics) => {
+          setTrackedTopics(newTopics);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("tabflow_tracked_topics", JSON.stringify(newTopics));
+          }
+        }}
+        addToast={addToast}
+        onRefreshDiscover={(channels, topics) => {
+          loadDiscoverFeed(channels, topics);
+        }}
       />
     </div>
   );

@@ -410,7 +410,10 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
 
   const type = video_id ? "video" : (video.type || "general");
   const title = video.title || "Başlıksız İçerik";
-  const source_name = video.source_name || video.author_name || "Bilinmeyen Kaynak";
+  const channel_name = video.channelTitle || video.metadata?.channelTitle || video.metadata?.channel_title || video.metadata?.author_name || video.author_name;
+  const source_name = (type === "video" && video_id)
+    ? (channel_name || (video.source_name && video.source_name !== "YouTube" ? video.source_name : "YouTube"))
+    : (video.source_name || video.author_name || "Bilinmeyen Kaynak");
   const url = video.url;
   const metadata = video.metadata || {};
   const description = metadata.description;
