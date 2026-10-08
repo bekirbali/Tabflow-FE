@@ -24,11 +24,35 @@ export async function GET(request) {
       );
     }
 
-    const ytUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet,replies&videoId=${encodeURIComponent(
+    const pageToken = searchParams.get("pageToken");
+
+    let ytUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet,replies&videoId=${encodeURIComponent(
       videoId
     )}&maxResults=25&order=relevance&key=${apiKey}`;
 
-    const res = await fetch(ytUrl, { cache: "no-store" });
+    if (pageToken) {
+      ytUrl += `&pageToken=${encodeURIComponent(pageToken)}`;
+    }
+
+    // İlk sayfa isteğinde videonun gerçek toplam yorum sayısını da paralel olarak al
+    let totalCommentCountPromise = Promise.resolve(null);
+    if (!pageToken) {
+      const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${encodeURIComponent(
+        videoId
+      )}&key=${apiKey}`;
+      totalCommentCountPromise = fetch(statsUrl, { next: { revalidate: 300 } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const count = d?.items?.[0]?.statistics?.commentCount;
+          return count !== undefined && count !== null ? Number(count) : null;
+        })
+        .catch(() => null);
+    }
+
+    const [res, totalCommentCount] = await Promise.all([
+      fetch(ytUrl, { cache: "no-store" }),
+      totalCommentCountPromise,
+    ]);
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -74,6 +98,8 @@ export async function GET(request) {
     return NextResponse.json({
       success: true,
       commentsCount: comments.length,
+      totalCommentCount: totalCommentCount !== undefined ? totalCommentCount : null,
+      nextPageToken: data?.nextPageToken || null,
       comments,
     });
   } catch (err) {

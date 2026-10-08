@@ -4,11 +4,87 @@ import React, { useState, useEffect } from "react";
 import { 
   X, ExternalLink, BookOpen, Play, Code, Globe, 
   Star, GitFork, AlertCircle, Type, ZoomIn, ZoomOut, Check,
-  Bell, BellRing
+  Bell, BellRing, Eye, ThumbsUp, Calendar, MessageSquare, ChevronDown, ChevronUp
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
 import { isYouTubeConnected, subscribeToYouTubeChannel } from "../utils/youtube-auth";
 import YouTubeComments from "./YouTubeComments";
+
+// Sayı formatlayıcı (Örn: 1.2 Mn, 45 B)
+function formatCompactNumber(num) {
+  if (num === null || num === undefined || isNaN(num)) return null;
+  const n = Number(num);
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1).replace(/\.0$/, "") + " Mrd";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + " Mn";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + " B";
+  return n.toLocaleString("tr-TR");
+}
+
+function formatFullNumber(num) {
+  if (num === null || num === undefined || isNaN(num)) return "";
+  return Number(num).toLocaleString("tr-TR");
+}
+
+function formatTimeAgo(dateString) {
+  if (!dateString) return null;
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSec = Math.floor((now - date) / 1000);
+    if (isNaN(diffSec) || diffSec < 0) return null;
+    if (diffSec < 60) return "az önce";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin} dk önce`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours} saat önce`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 30) return `${diffDays} gün önce`;
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) return `${diffMonths} ay önce`;
+    const diffYears = Math.floor(diffMonths / 12);
+    return `${diffYears} yıl önce`;
+  } catch (e) {
+    return null;
+  }
+}
+
+function formatFullDate(dateString) {
+  if (!dateString) return null;
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("tr-TR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+function renderClickableText(text) {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-400 hover:text-sky-300 underline underline-offset-2 break-all inline-flex items-center gap-0.5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+          <ExternalLink className="h-2.5 w-2.5 inline-block opacity-70 ml-0.5" />
+        </a>
+      );
+    }
+    return part;
+  });
+}
 
 export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
@@ -18,6 +94,9 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [channelTitle, setChannelTitle] = useState("");
+  const [videoDetails, setVideoDetails] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
   const modalIframeRef = React.useRef(null);
 
   const video_id = video ? (video.video_id || video.videoId || getYouTubeId(video.url)) : null;
@@ -52,6 +131,48 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
     }, 0);
     return () => clearTimeout(timer);
   }, [video_id, isOpen, video?.metadata?.channel_id]);
+
+  // Fetch detailed YouTube metadata (views, likes, upload date, comments count, description)
+  useEffect(() => {
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      if (!isOpen || !video_id) {
+        setVideoDetails(null);
+        setIsDescExpanded(false);
+        return;
+      }
+
+      setLoadingDetails(true);
+
+      fetch(`/api/youtube/details?videoId=${encodeURIComponent(video_id)}`)
+        .then((res) => {
+          if (!res.ok) throw new Error("Detaylar alınamadı");
+          return res.json();
+        })
+        .then((data) => {
+          if (!isMounted) return;
+          if (data.success && data.details) {
+            setVideoDetails(data.details);
+            if (data.details.channelTitle) {
+              setChannelTitle((prev) => prev || data.details.channelTitle);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn("YouTube video details fetch error:", err);
+        })
+        .finally(() => {
+          if (isMounted) {
+            setLoadingDetails(false);
+          }
+        });
+    }, 0);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [isOpen, video_id]);
 
   // Listen for sync completion from extension bridge
   useEffect(() => {
@@ -472,21 +593,148 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
                     className="w-full h-full"
                   />
                 </div>
-                <div className="mt-5 px-1">
+                <div className="mt-5 px-1 space-y-4">
+                  {/* Video Title */}
                   <h2 className="text-lg md:text-xl font-bold text-zinc-100 leading-snug">
-                    {title}
+                    {videoDetails?.title || title}
                   </h2>
-                  {description && (
-                    <p className="text-xs md:text-sm text-zinc-400 mt-2.5 leading-relaxed bg-zinc-900/40 border border-white/5 rounded-2xl p-4">
-                      {description}
-                    </p>
+
+                  {/* Video Meta & Statistics Bar */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1 pb-1">
+                    {/* Channel Badge */}
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800/70 border border-white/10 text-xs font-semibold text-zinc-200">
+                      <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                      <span className="font-bold text-white max-w-[200px] truncate">
+                        {videoDetails?.channelTitle || channelTitle || source_name}
+                      </span>
+                    </div>
+
+                    {/* Stats Loading Skeleton */}
+                    {loadingDetails && !videoDetails && (
+                      <div className="flex flex-wrap items-center gap-2 animate-pulse">
+                        <div className="h-8 w-28 bg-zinc-800/60 rounded-xl border border-white/5" />
+                        <div className="h-8 w-24 bg-zinc-800/60 rounded-xl border border-white/5" />
+                        <div className="h-8 w-24 bg-zinc-800/60 rounded-xl border border-white/5" />
+                        <div className="h-8 w-20 bg-zinc-800/60 rounded-xl border border-white/5" />
+                      </div>
+                    )}
+
+                    {/* Views Count Badge */}
+                    {videoDetails?.viewCount !== null && videoDetails?.viewCount !== undefined && (
+                      <div
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/15 border border-sky-500/20 text-sky-300 text-xs font-medium transition-colors cursor-help"
+                        title={`${formatFullNumber(videoDetails.viewCount)} görüntülenme`}
+                      >
+                        <Eye className="h-3.5 w-3.5 text-sky-400 stroke-[2.2]" />
+                        <span className="font-bold text-sky-200">
+                          {formatCompactNumber(videoDetails.viewCount)}
+                        </span>
+                        <span className="text-[11px] text-sky-400/80">izlenme</span>
+                      </div>
+                    )}
+
+                    {/* Likes Count Badge */}
+                    {videoDetails?.likeCount !== null && videoDetails?.likeCount !== undefined && (
+                      <div
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 text-rose-300 text-xs font-medium transition-colors cursor-help"
+                        title={`${formatFullNumber(videoDetails.likeCount)} beğeni`}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5 text-rose-400 stroke-[2.2]" />
+                        <span className="font-bold text-rose-200">
+                          {formatCompactNumber(videoDetails.likeCount)}
+                        </span>
+                        <span className="text-[11px] text-rose-400/80">beğeni</span>
+                      </div>
+                    )}
+
+                    {/* Upload / Published Date Badge */}
+                    {videoDetails?.publishedAt && (
+                      <div
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 text-amber-300 text-xs font-medium transition-colors cursor-help"
+                        title={`Yayınlanma: ${formatFullDate(videoDetails.publishedAt)}`}
+                      >
+                        <Calendar className="h-3.5 w-3.5 text-amber-400 stroke-[2.2]" />
+                        <span className="font-bold text-amber-200">
+                          {formatTimeAgo(videoDetails.publishedAt)}
+                        </span>
+                        <span className="text-[10px] text-amber-400/70 hidden sm:inline">
+                          ({formatFullDate(videoDetails.publishedAt)})
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Comments Count Badge */}
+                    {videoDetails?.commentCount !== null && videoDetails?.commentCount !== undefined && (
+                      <div
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/20 text-emerald-300 text-xs font-medium transition-colors cursor-help"
+                        title={`${formatFullNumber(videoDetails.commentCount)} toplam yorum`}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5 text-emerald-400 stroke-[2.2]" />
+                        <span className="font-bold text-emerald-200">
+                          {formatCompactNumber(videoDetails.commentCount)}
+                        </span>
+                        <span className="text-[11px] text-emerald-400/80">yorum</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Video Tags (if present) */}
+                  {videoDetails?.tags && videoDetails.tags.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {videoDetails.tags.slice(0, 6).map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="text-[11px] px-2.5 py-0.5 rounded-lg bg-zinc-800/50 text-zinc-400 border border-white/5 font-mono hover:text-zinc-200 transition-colors"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Video Description Box */}
+                  {(videoDetails?.description || description) && (
+                    <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-4 transition-all">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                          Video Açıklaması
+                        </span>
+                        {((videoDetails?.description || description).length > 280) && (
+                          <button
+                            onClick={() => setIsDescExpanded((prev) => !prev)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                          >
+                            <span>{isDescExpanded ? "Daha az göster" : "Daha fazla göster"}</span>
+                            {isDescExpanded ? (
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="text-xs md:text-sm text-zinc-300 leading-relaxed whitespace-pre-line break-words font-sans selection:bg-rose-500/20">
+                        {(() => {
+                          const fullDesc = videoDetails?.description || description;
+                          if (!isDescExpanded && fullDesc.length > 280) {
+                            return renderClickableText(fullDesc.slice(0, 280) + "...");
+                          }
+                          return renderClickableText(fullDesc);
+                        })()}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Right Side: YouTube Comments Panel */}
               <div className="w-full lg:w-96 min-h-[380px] lg:min-h-0 lg:h-full shrink-0">
-                <YouTubeComments videoId={video_id} addToast={addToast} />
+                <YouTubeComments
+                  videoId={video_id}
+                  addToast={addToast}
+                  totalCommentCount={videoDetails?.commentCount}
+                />
               </div>
             </div>
           )}

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { 
   MessageSquare, ThumbsUp, AlertCircle, 
   MessageSquareOff, RefreshCw, Sparkles, User, ExternalLink,
-  Send, Loader2
+  Send, Loader2, ChevronDown
 } from "lucide-react";
 import { isYouTubeConnected, postCommentToYouTube } from "../utils/youtube-auth";
 
@@ -36,14 +36,23 @@ function formatCompactNumber(num) {
   return num.toString();
 }
 
-export default function YouTubeComments({ videoId, addToast }) {
+export default function YouTubeComments({ videoId, addToast, totalCommentCount }) {
   const [comments, setComments] = useState([]);
+  const [apiTotalCount, setApiTotalCount] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [disabled, setDisabled] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [isPosting, setIsPosting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [nextPageToken, setNextPageToken] = useState(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Prop olarak verilmişse veya API'den dönmüşse gerçek toplam yorum sayısını al
+  const totalCount =
+    totalCommentCount !== undefined && totalCommentCount !== null
+      ? totalCommentCount
+      : apiTotalCount;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -66,19 +75,57 @@ export default function YouTubeComments({ videoId, addToast }) {
         throw new Error(data.error || "Yorumlar alınamadı.");
       }
 
+      if (data.totalCommentCount !== undefined && data.totalCommentCount !== null) {
+        setApiTotalCount(data.totalCommentCount);
+      }
+
       if (data.disabled) {
         setDisabled(true);
         setComments([]);
+        setNextPageToken(null);
       } else {
         setComments(data.comments || []);
+        setNextPageToken(data.nextPageToken || null);
       }
     } catch (err) {
       console.error("Comments fetch error:", err);
       setError(err.message || "Yorumlar yüklenirken bir hata oluştu.");
+      setNextPageToken(null);
     } finally {
       setLoading(false);
     }
   }, [videoId]);
+
+  const handleLoadMore = async () => {
+    if (!videoId || !nextPageToken || isLoadingMore) return;
+    setIsLoadingMore(true);
+
+    try {
+      const res = await fetch(
+        `/api/youtube/comments?videoId=${encodeURIComponent(videoId)}&pageToken=${encodeURIComponent(nextPageToken)}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Daha fazla yorum alınamadı.");
+      }
+
+      const newComments = data.comments || [];
+      setComments((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const filtered = newComments.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...filtered];
+      });
+      setNextPageToken(data.nextPageToken || null);
+    } catch (err) {
+      console.error("Load more comments error:", err);
+      if (addToast) {
+        addToast(err.message || "Daha fazla yorum yüklenirken bir hata oluştu.", "error");
+      }
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     let isCancelled = false;
@@ -149,11 +196,18 @@ export default function YouTubeComments({ videoId, addToast }) {
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               YouTube Yorumları
-              {!loading && !disabled && comments.length > 0 && (
+              {!loading && !disabled && (totalCount !== null && totalCount !== undefined ? (
+                <span 
+                  className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono"
+                  title={`${Number(totalCount).toLocaleString("tr-TR")} toplam yorum`}
+                >
+                  {formatCompactNumber(totalCount)}
+                </span>
+              ) : comments.length > 0 ? (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono">
                   {comments.length}
                 </span>
-              )}
+              ) : null)}
             </h3>
             <p className="text-[11px] text-zinc-400">Tartışmalar ve uzaktan yorum yapma</p>
           </div>
@@ -354,6 +408,33 @@ export default function YouTubeComments({ videoId, addToast }) {
             </div>
           </div>
         ))}
+
+        {/* Load More Comments Button */}
+        {!loading && !error && !disabled && nextPageToken && (
+          <div className="pt-2 pb-4 flex justify-center">
+            <button
+              onClick={handleLoadMore}
+              disabled={isLoadingMore}
+              className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-zinc-300 hover:text-white bg-zinc-900/80 hover:bg-zinc-800 border border-white/10 hover:border-white/20 transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 cursor-pointer shadow-lg"
+            >
+              {isLoadingMore ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                  <span>Daha Fazla Yorum Yükleniyor...</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 text-blue-400" />
+                  <span>
+                    Daha Fazla Yorum Gör ({comments.length}
+                    {totalCount ? ` / ${formatCompactNumber(totalCount)}` : ""}
+                    )
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

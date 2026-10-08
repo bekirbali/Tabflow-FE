@@ -561,7 +561,13 @@ export default function Home() {
     // Optimistic UI update via functional state
     setVideos((prev) => {
       const updated = prev.map((v) =>
-        v.id === id ? { ...v, liked: newLiked } : v
+        v.id === id
+          ? {
+              ...v,
+              liked: newLiked,
+              disliked: newLiked ? false : v.disliked,
+            }
+          : v
       );
       if (!user) {
         localStorage.setItem("tabflow_videos", JSON.stringify(updated));
@@ -571,7 +577,10 @@ export default function Home() {
 
     if (user) {
       try {
-        await api.updateLink(id, { liked: newLiked });
+        await api.updateLink(id, {
+          liked: newLiked,
+          disliked: newLiked ? false : item.disliked,
+        });
         addToast(newLiked ? "Beğenildi! ❤️" : "Beğeni geri alındı.", "success");
       } catch (err) {
         fetchCloudVideos();
@@ -581,15 +590,73 @@ export default function Home() {
       addToast(newLiked ? "Beğenildi! ❤️" : "Beğeni geri alındı.", "success");
     }
 
-
     // YouTube entegrasyonu: bağlıysa ve video ise YouTube'da da beğen
     const videoId = item.video_id || item.videoId;
     if (videoId && isYouTubeConnected()) {
       const ytResult = await rateVideoOnYouTube(videoId, newLiked ? "like" : "none");
       if (ytResult?.success) {
         addToast(
-          newLiked ? "YouTube'da da beğenildi ▶️❤️" : "YouTube beğenisi de kaldırıldı.",
+          newLiked ? "YouTube'da da beğenildi ▶️❤️" : "YouTube beğenisi kaldırıldı.",
           "success"
+        );
+      } else if (ytResult?.needsReconnect) {
+        addToast("YouTube bağlantısı sona erdi. Lütfen tekrar bağlan.", "warning");
+      }
+    }
+  };
+
+  // Dislike Link Handler
+  const handleDislikeVideo = async (id) => {
+    const item = videos.find((v) => v.id === id);
+    if (!item) return;
+    const newDisliked = !item.disliked;
+
+    // Optimistic UI update via functional state
+    setVideos((prev) => {
+      const updated = prev.map((v) =>
+        v.id === id
+          ? {
+              ...v,
+              disliked: newDisliked,
+              liked: newDisliked ? false : v.liked,
+            }
+          : v
+      );
+      if (!user) {
+        localStorage.setItem("tabflow_videos", JSON.stringify(updated));
+      }
+      return updated;
+    });
+
+    if (user) {
+      try {
+        await api.updateLink(id, {
+          disliked: newDisliked,
+          liked: newDisliked ? false : item.liked,
+        });
+        addToast(
+          newDisliked ? "Beğenilmedi olarak işaretlendi. 👎" : "Beğenmeme kaldırıldı.",
+          "info"
+        );
+      } catch (err) {
+        fetchCloudVideos();
+        addToast("İşlem gerçekleştirilemedi.", "error");
+      }
+    } else {
+      addToast(
+        newDisliked ? "Beğenilmedi olarak işaretlendi. 👎" : "Beğenmeme kaldırıldı.",
+        "info"
+      );
+    }
+
+    // YouTube entegrasyonu: bağlıysa ve video ise YouTube'da da dislike/none gönder
+    const videoId = item.video_id || item.videoId;
+    if (videoId && isYouTubeConnected()) {
+      const ytResult = await rateVideoOnYouTube(videoId, newDisliked ? "dislike" : "none");
+      if (ytResult?.success) {
+        addToast(
+          newDisliked ? "YouTube'da da beğenilmedi (Dislike) olarak iletildi 👎" : "YouTube dislike kaldırıldı.",
+          "info"
         );
       } else if (ytResult?.needsReconnect) {
         addToast("YouTube bağlantısı sona erdi. Lütfen tekrar bağlan.", "warning");
@@ -1106,6 +1173,7 @@ export default function Home() {
                       video={video}
                       activeTab={activeTab}
                       onLike={handleLikeVideo}
+                      onDislike={handleDislikeVideo}
                       onBookmark={handleBookmarkVideo}
                       onDelete={handleDeleteVideo}
                       onAction={handleActionVideo}
