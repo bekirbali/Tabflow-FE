@@ -191,6 +191,8 @@ export async function toggleWatchLater(videoId, action) {
   }
 }
 
+const inFlightSubChecks = new Map();
+
 /**
  * YouTube kanalına abone ol / abonelikten çık.
  * @param {{ videoId?: string, channelId?: string, action?: "subscribe" | "unsubscribe" }} param0
@@ -207,7 +209,7 @@ export async function subscribeToYouTubeChannel({ videoId, channelId, action = "
       body: JSON.stringify({ videoId, channelId, action, accessToken }),
     });
 
-    const data = await res.json();
+    let data = await res.json();
 
     // Token süresi dolmuşsa otomatik yenilemeyi dene
     if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
@@ -219,8 +221,26 @@ export async function subscribeToYouTubeChannel({ videoId, channelId, action = "
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId, channelId, action, accessToken: newToken }),
       });
-      const retryData = await retryRes.json();
-      return retryData;
+      data = await retryRes.json();
+    }
+
+    if (data.success && typeof data.subscribed === "boolean") {
+      const resolvedChannelId = data.channelId || channelId;
+      const subStateStr = data.subscribed ? "true" : "false";
+      if (typeof window !== "undefined") {
+        if (resolvedChannelId) localStorage.setItem(`yt_sub_ch_${resolvedChannelId}`, subStateStr);
+        if (videoId) localStorage.setItem(`yt_sub_vid_${videoId}`, subStateStr);
+        window.dispatchEvent(
+          new CustomEvent("tabflow_subscription_updated", {
+            detail: {
+              channelId: resolvedChannelId,
+              videoId,
+              subscribed: data.subscribed,
+              channelTitle: data.channelTitle,
+            },
+          })
+        );
+      }
     }
 
     return data;
@@ -232,39 +252,76 @@ export async function subscribeToYouTubeChannel({ videoId, channelId, action = "
 
 /**
  * YouTube kanal abonelik durumunu kontrol et.
- * @param {{ videoId?: string, channelId?: string }} param0
- * @returns {Promise<{ success: boolean, subscribed?: boolean, channelTitle?: string, needsReconnect?: boolean }>}
+ * Yinelenen eşzamanlı istekleri önler ve önbellek/yerel hafızayı günceller.
+ * @param {{ videoId?: string, channelId?: string, skipCache?: boolean }} param0
+ * @returns {Promise<{ success: boolean, subscribed?: boolean, channelId?: string, channelTitle?: string, needsReconnect?: boolean, notConnected?: boolean }>}
  */
-export async function checkYouTubeSubscriptionStatus({ videoId, channelId }) {
-  const accessToken = await getValidYouTubeAccessToken();
-  if (!accessToken) return { success: false, notConnected: true };
+export async function checkYouTubeSubscriptionStatus({ videoId, channelId, skipCache = false }) {
+  const cacheKey = channelId ? `ch_${channelId}` : `vid_${videoId}`;
+  if (!cacheKey || (!videoId && !channelId)) {
+    return { success: false, error: "videoId veya channelId gerekli" };
+  }
 
-  try {
-    const res = await fetch("/api/youtube/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ videoId, channelId, action: "status", accessToken }),
-    });
+  // Devam eden aynı istek varsa mükerrer network çağrısı yapma
+  if (inFlightSubChecks.has(cacheKey)) {
+    return inFlightSubChecks.get(cacheKey);
+  }
 
-    const data = await res.json();
+  const checkPromise = (async () => {
+    const accessToken = await getValidYouTubeAccessToken();
+    if (!accessToken) return { success: false, notConnected: true };
 
-    if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
-      const newToken = await refreshYouTubeToken();
-      if (!newToken) return { success: false, needsReconnect: true };
-
-      const retryRes = await fetch("/api/youtube/subscribe", {
+    try {
+      const res = await fetch("/api/youtube/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, channelId, action: "status", accessToken: newToken }),
+        body: JSON.stringify({ videoId, channelId, action: "status", accessToken }),
       });
-      return await retryRes.json();
-    }
 
-    return data;
-  } catch (err) {
-    console.error("checkYouTubeSubscriptionStatus error:", err);
-    return { success: false, error: "Bağlantı hatası." };
-  }
+      let data = await res.json();
+
+      if (res.status === 401 && data.error === "TOKEN_EXPIRED") {
+        const newToken = await refreshYouTubeToken();
+        if (!newToken) return { success: false, needsReconnect: true };
+
+        const retryRes = await fetch("/api/youtube/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ videoId, channelId, action: "status", accessToken: newToken }),
+        });
+        data = await retryRes.json();
+      }
+
+      if (data && data.success && typeof data.subscribed === "boolean") {
+        const resolvedChannelId = data.channelId || channelId;
+        const subStateStr = data.subscribed ? "true" : "false";
+        if (typeof window !== "undefined") {
+          if (resolvedChannelId) localStorage.setItem(`yt_sub_ch_${resolvedChannelId}`, subStateStr);
+          if (videoId) localStorage.setItem(`yt_sub_vid_${videoId}`, subStateStr);
+          window.dispatchEvent(
+            new CustomEvent("tabflow_subscription_updated", {
+              detail: {
+                channelId: resolvedChannelId,
+                videoId,
+                subscribed: data.subscribed,
+                channelTitle: data.channelTitle,
+              },
+            })
+          );
+        }
+      }
+
+      return data;
+    } catch (err) {
+      console.error("checkYouTubeSubscriptionStatus error:", err);
+      return { success: false, error: "Bağlantı hatası." };
+    } finally {
+      inFlightSubChecks.delete(cacheKey);
+    }
+  })();
+
+  inFlightSubChecks.set(cacheKey, checkPromise);
+  return checkPromise;
 }
 
 /**

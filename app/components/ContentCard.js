@@ -8,7 +8,7 @@ import {
   Bell, BellRing, MessageSquare, X
 } from "lucide-react";
 import { getYouTubeId } from "../utils/youtube";
-import { isYouTubeConnected, subscribeToYouTubeChannel } from "../utils/youtube-auth";
+import { isYouTubeConnected, subscribeToYouTubeChannel, checkYouTubeSubscriptionStatus } from "../utils/youtube-auth";
 import YouTubeComments from "./YouTubeComments";
 
 export default function ContentCard({
@@ -105,15 +105,51 @@ export default function ContentCard({
           setIsHistorySynced(true);
         }
 
-        const channelId = metadata.channel_id;
+        const channelId = metadata?.channel_id;
         const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
-        if (localStorage.getItem(subKey) === "true" || localStorage.getItem(`yt_sub_vid_${video_id}`) === "true") {
+        const cachedSub = localStorage.getItem(subKey) || localStorage.getItem(`yt_sub_vid_${video_id}`);
+        if (cachedSub === "true") {
           setIsSubscribed(true);
+        } else if (cachedSub === "false") {
+          setIsSubscribed(false);
+        }
+
+        // YouTube OAuth bağlıysa, güncel abonelik durumunu API'den dinamik sorgula
+        if (isYouTubeConnected()) {
+          checkYouTubeSubscriptionStatus({ videoId: video_id, channelId })
+            .then((res) => {
+              if (res && res.success && typeof res.subscribed === "boolean") {
+                setIsSubscribed(res.subscribed);
+                if (res.channelTitle) setChannelTitle(res.channelTitle);
+              }
+            })
+            .catch(() => {});
         }
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [video_id, metadata.channel_id]);
+  }, [video_id, metadata?.channel_id]);
+
+  // YouTube Abonelik Olaylarını Dinle (diğer kartlardan veya modalden gelen güncellemeler)
+  React.useEffect(() => {
+    if (type !== "video" || !video_id || typeof window === "undefined") return;
+
+    const handleSubUpdate = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+      const channelId = metadata?.channel_id;
+      const matchesChannel = channelId && detail.channelId && detail.channelId === channelId;
+      const matchesVideo = detail.videoId && detail.videoId === video_id;
+
+      if (matchesChannel || matchesVideo) {
+        setIsSubscribed(!!detail.subscribed);
+        if (detail.channelTitle) setChannelTitle(detail.channelTitle);
+      }
+    };
+
+    window.addEventListener("tabflow_subscription_updated", handleSubUpdate);
+    return () => window.removeEventListener("tabflow_subscription_updated", handleSubUpdate);
+  }, [video_id, metadata?.channel_id, type]);
 
   // YouTube Geçmiş Eşitleme Yanıtını Dinle
   React.useEffect(() => {
