@@ -56,6 +56,10 @@ export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // My Feed Sıralama state: "added" | "published" | "duration" | "channel"
+  const [feedSort, setFeedSort] = useState("added");
+  const [feedSortDir, setFeedSortDir] = useState("desc"); // "asc" | "desc"
+
   // Discover state
   const [discoverVideos, setDiscoverVideos] = useState([]);
   const [isDiscoverLoading, setIsDiscoverLoading] = useState(false);
@@ -132,6 +136,16 @@ export default function Home() {
           const defaultTopics = ["React", "Web Development", "AI Tools"];
           setTrackedTopics(defaultTopics);
           localStorage.setItem("tabflow_tracked_topics", JSON.stringify(defaultTopics));
+        }
+
+        // Load feed sort preference
+        const storedFeedSort = localStorage.getItem("tabflow_feed_sort");
+        if (storedFeedSort) {
+          setFeedSort(storedFeedSort);
+        }
+        const storedFeedSortDir = localStorage.getItem("tabflow_feed_sort_dir");
+        if (storedFeedSortDir) {
+          setFeedSortDir(storedFeedSortDir);
         }
       } catch (e) {
         console.error("Local preferences load error:", e);
@@ -560,12 +574,78 @@ export default function Home() {
     return (Array.isArray(discoverVideos) ? discoverVideos : []).filter(isVideoShorts).length;
   }, [discoverVideos, isVideoShorts]);
 
+  // Handle feed sorting change & toggle direction
+  const handleSortChange = useCallback((newSort) => {
+    if (feedSort === newSort) {
+      const nextDir = feedSortDir === "asc" ? "desc" : "asc";
+      setFeedSortDir(nextDir);
+      try {
+        localStorage.setItem("tabflow_feed_sort_dir", nextDir);
+      } catch (_) {}
+    } else {
+      const defaultDir = (newSort === "duration" || newSort === "channel") ? "asc" : "desc";
+      setFeedSort(newSort);
+      setFeedSortDir(defaultDir);
+      try {
+        localStorage.setItem("tabflow_feed_sort", newSort);
+        localStorage.setItem("tabflow_feed_sort_dir", defaultDir);
+      } catch (_) {}
+    }
+    setFocusedIndex(-1);
+  }, [feedSort, feedSortDir]);
+
   // Calculate filtered lists based on active tab with proper ordering
   const filteredVideos = useMemo(() => {
     if (activeTab === "feed") {
-      return videos
-        .filter((v) => !(v.is_clean || v.is_watched) && !v.is_private)
-        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      const activeFeed = videos.filter((v) => !(v.is_clean || v.is_watched) && !v.is_private);
+      return [...activeFeed].sort((a, b) => {
+        // 1. TabFlow'a eklendiği tarihe göre
+        if (feedSort === "added") {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return feedSortDir === "asc" ? timeA - timeB : timeB - timeA;
+        }
+
+        // 2. YouTube'a eklendiği (yayınlandığı) tarihe göre
+        if (feedSort === "published") {
+          const getPubDate = (item) => {
+            const pub = item.metadata?.publishedAt || item.metadata?.published_at || item.publishedAt;
+            if (pub) {
+              const t = new Date(pub).getTime();
+              if (!isNaN(t)) return t;
+            }
+            return new Date(item.created_at || 0).getTime();
+          };
+          const timeA = getPubDate(a);
+          const timeB = getPubDate(b);
+          return feedSortDir === "asc" ? timeA - timeB : timeB - timeA;
+        }
+
+        // 3. Videoların süresine göre
+        if (feedSort === "duration") {
+          const durA = parseDurationToSeconds(a.duration || a.metadata?.duration || "0:00");
+          const durB = parseDurationToSeconds(b.duration || b.metadata?.duration || "0:00");
+          return feedSortDir === "asc" ? durA - durB : durB - durA;
+        }
+
+        // 4. Kanal isimlerinin alfabetik sırasına göre
+        if (feedSort === "channel") {
+          const getChannelName = (item) => {
+            const type = item.video_id ? "video" : (item.type || item.metadata?.type || "general");
+            const chan = item.channelTitle || item.metadata?.channelTitle || item.metadata?.channel_title || item.metadata?.author_name || item.author_name;
+            if (type === "video" && item.video_id) {
+              return (chan || (item.source_name && item.source_name !== "YouTube" ? item.source_name : "YouTube") || "").trim().toLowerCase();
+            }
+            return (item.source_name || item.author_name || item.metadata?.source_name || "").trim().toLowerCase();
+          };
+          const chanA = getChannelName(a);
+          const chanB = getChannelName(b);
+          const cmp = chanA.localeCompare(chanB, "tr");
+          return feedSortDir === "asc" ? cmp : -cmp;
+        }
+
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      });
     }
     if (activeTab === "discover") {
       const list = Array.isArray(discoverVideos) ? discoverVideos : [];
@@ -609,7 +689,7 @@ export default function Home() {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     return [];
-  }, [videos, activeTab, discoverVideos, discoverFilter, isVideoShorts]);
+  }, [videos, activeTab, discoverVideos, discoverFilter, isVideoShorts, feedSort, feedSortDir, parseDurationToSeconds]);
 
   // Paginated/Chunked items for infinite scroll (drastically improves performance with large archives)
   const displayedVideos = useMemo(() => {
@@ -1466,6 +1546,46 @@ export default function Home() {
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isDiscoverLoading ? "animate-spin text-cyan-400" : ""}`} />
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* My Feed Üst Sıralama Çubuğu */}
+          {activeTab === "feed" && filteredVideos.length > 0 && (
+            <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-violet-400" />
+                <span className="font-medium text-zinc-300">Sırala:</span>
+              </div>
+
+              <div className="flex items-center gap-1 bg-zinc-900/70 border border-white/5 p-1 rounded-xl">
+                {[
+                  { id: "added", label: "Eklenme", title: "TabFlow'a eklenme tarihine göre" },
+                  { id: "published", label: "YouTube", title: "YouTube'a eklenme (yayın) tarihine göre" },
+                  { id: "duration", label: "Süre", title: "Videoların süresine göre" },
+                  { id: "channel", label: "Kanal", title: "Kanal isimlerinin alfabetik sırasına göre" },
+                ].map((opt) => {
+                  const isActive = feedSort === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleSortChange(opt.id)}
+                      title={opt.title}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-zinc-800 text-violet-400 shadow-sm border border-violet-500/20"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {isActive && (
+                        <span className="text-[10px] text-violet-300 font-bold ml-0.5">
+                          {feedSortDir === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

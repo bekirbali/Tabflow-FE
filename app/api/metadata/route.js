@@ -144,6 +144,9 @@ export async function GET(request) {
                   const item = apiData.items[0];
                   title = item.snippet?.title || title;
                   source_name = item.snippet?.channelTitle || source_name;
+                  if (item.snippet?.publishedAt) {
+                    metadata.publishedAt = item.snippet.publishedAt;
+                  }
                   const seconds = parseISO8601Duration(item.contentDetails?.duration);
                   if (seconds) {
                     metadata.duration = formatDuration(seconds);
@@ -183,6 +186,12 @@ export async function GET(request) {
                 const duration = extractYouTubeDuration(watchHtml);
                 if (duration) {
                   metadata.duration = duration;
+                }
+                const pubMatch = watchHtml.match(/itemprop=["'](?:datePublished|uploadDate)["']\s+content=["']([^"']+)["']/i) ||
+                                 watchHtml.match(/content=["']([^"']+)["']\s+itemprop=["'](?:datePublished|uploadDate)["']/i) ||
+                                 watchHtml.match(/["\\]?(?:publishDate|uploadDate)["\\]?\s*:\s*["\\]?([^"\\}]+)["\\]?/i);
+                if (pubMatch && pubMatch[1]) {
+                  metadata.publishedAt = pubMatch[1].trim();
                 }
               }
             } catch (e) {
