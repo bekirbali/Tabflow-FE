@@ -534,12 +534,6 @@ export default function ContentCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {metadata?.discoveryLabel && metadata?.discoveryReason !== "channel" && (
-            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-1">
-              <span>{metadata.discoveryReason === "popular" ? "🔥" : "✨"}</span>
-              <span className="truncate max-w-[140px]">{metadata.discoveryLabel}</span>
-            </span>
-          )}
           {type === "article" && read_time && (
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400">
               {read_time}
