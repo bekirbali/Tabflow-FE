@@ -1230,7 +1230,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))] pb-24 text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 pb-24 text-zinc-100">
       <div className="max-w-6xl mx-auto px-4 pt-8 md:pt-12 flex flex-col gap-8">
         
         {/* Header Section */}
@@ -1248,8 +1248,8 @@ export default function Home() {
         <AddLinkBar onAddLink={handleAddLink} addToast={addToast} onSecretUnlock={user ? handleSecretUnlock : null} />
 
         {/* Navigation Switcher Tabs */}
-        <div className="flex justify-center mt-2">
-          <nav className="flex p-1.5 bg-zinc-900/60 backdrop-blur-xl border border-white/5 rounded-2xl shadow-lg">
+        <div className="sticky top-3 z-30 flex justify-center pointer-events-none">
+          <nav className="pointer-events-auto flex p-1.5 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl max-w-full overflow-x-auto no-scrollbar">
             <button
               onClick={() => {
                 setActiveTab("feed");
