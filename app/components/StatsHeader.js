@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Inbox, Archive, Heart, Layers, User, LogOut, Key, Copy, Check, Keyboard, Play, Link2Off } from "lucide-react";
 import { isYouTubeConnected, clearYouTubeTokens } from "../utils/youtube-auth";
 
-export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick, showKeyboardHelper, onToggleKeyboardHelper, isPrivateUnlocked = false }) {
+export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick, showKeyboardHelper, onToggleKeyboardHelper, isPrivateUnlocked = false, stats = null }) {
   const [copied, setCopied] = useState(false);
   const [ytConnected, setYtConnected] = useState(false);
 
@@ -24,13 +24,17 @@ export default function StatsHeader({ videos, user, onLoginClick, onLogoutClick,
     setYtConnected(false);
   };
 
-  // Gizli sekme açık değilse gizli linkleri sayaçlara ve Inbox Zero oranına dahil etme
+  // Sunucudan hafif stats objesi gelmişse doğrudan onu kullan, yoksa yerel diziden hesapla
   const visibleVideos = videos.filter((v) => isPrivateUnlocked ? true : !v.is_private);
-  const total = visibleVideos.length;
-  // Handle both is_clean and is_watched for backend/frontend compatibility
-  const watched = visibleVideos.filter((v) => v.is_clean || v.is_watched).length;
-  const pending = total - watched;
-  const liked = visibleVideos.filter((v) => v.liked).length;
+  const fallbackWatched = visibleVideos.filter((v) => v.is_clean || v.is_watched).length;
+  const fallbackTotal = visibleVideos.length;
+  const fallbackPending = fallbackTotal - fallbackWatched;
+  const fallbackLiked = visibleVideos.filter((v) => v.liked).length;
+
+  const watched = stats ? stats.archive : fallbackWatched;
+  const pending = stats ? stats.inbox : fallbackPending;
+  const total = stats ? (stats.inbox + stats.archive) : fallbackTotal;
+  const liked = stats ? stats.liked : fallbackLiked;
   const inboxZeroRate = total > 0 ? Math.round((watched / total) * 100) : 100;
 
   // SVG parameters for radial progress

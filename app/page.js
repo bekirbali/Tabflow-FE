@@ -52,6 +52,8 @@ export default function Home() {
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE); // Infinite scroll chunking (20 at a time)
   const loadMoreRef = useRef(null);
   const [isPrivateUnlocked, setIsPrivateUnlocked] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [loadedTabs, setLoadedTabs] = useState(new Set(["feed"]));
   const [toasts, setToasts] = useState([]);
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,7 +103,8 @@ export default function Home() {
       setActiveTab("private");
       setFocusedIndex(-1);
       // Backend'den gizli linkleri de çekerek state'i güncelle
-      await fetchCloudVideos(true);
+      await fetchCloudVideos({ tab: "private", forcePrivate: true });
+      refreshStats();
       addToast("🔒 Gizli akış açıldı.", "success");
     } else {
       addToast("Şifre hatalı. Gizli akışa giriş reddedildi.", "error");
@@ -120,7 +123,8 @@ export default function Home() {
         if (currentUser.api_key && typeof window !== "undefined") {
           window.postMessage({ action: "tabflow_auth_success", apiKey: currentUser.api_key }, window.location.origin);
         }
-        fetchCloudVideos();
+        refreshStats();
+        fetchCloudVideos({ tab: "feed" });
       } else {
         loadLocalVideos();
       }
@@ -299,116 +303,120 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [activeTab, discoverFilter]);
 
-  // Fetch from Django Cloud Database
-  async function fetchCloudVideos(forcePrivate = null) {
-    setIsLoading(true);
+  // Fetch from Django Cloud Database with Lazy-Loading Tab Support
+  async function fetchCloudVideos(options = {}) {
+    const isBool = typeof options === "boolean";
+    const forcePrivate = isBool ? options : (options.forcePrivate ?? null);
+    const targetTab = isBool ? null : (options.tab || null);
+    const isBackground = !isBool && !!options.isBackground;
+
+    if (!isBackground) setIsLoading(true);
     try {
       const shouldIncludePrivate = forcePrivate !== null ? forcePrivate : isPrivateUnlocked;
-      const data = await api.getLinks(shouldIncludePrivate);
+      const data = await api.getLinks({
+        includePrivate: shouldIncludePrivate,
+        tab: targetTab || undefined
+      });
       
-      const uniqueMap = new Map();
-      
-      for (const v of data) {
-         const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
-         const normUrl = normalizeUrl(v.url);
-         const key = ytId ? `yt_${ytId}` : `url_${normUrl}`;
-         
-         const isClean = v.is_clean || v.is_watched || false;
-         const watchedAt = v.watched_at || (isClean ? v.created_at : null);
-         
-         if (uniqueMap.has(key)) {
-             const existing = uniqueMap.get(key);
-             if (isClean && !existing.is_clean) {
-                 existing.is_clean = true;
-                 existing.is_watched = true;
-                 existing.watched_at = watchedAt || new Date().toISOString();
-             }
-             if (v.liked) existing.liked = true;
-             if (v.bookmarked) existing.bookmarked = true;
-         } else {
-             uniqueMap.set(key, {
-                 id: v.id,
-                 videoId: ytId,
-                 video_id: ytId,
-                 url: v.url,
-                 type: ytId ? "video" : (v.type || "general"),
-                 title: v.title,
-                 source_name: v.source_name || v.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
-                 is_clean: isClean,
-                 is_watched: isClean,
-                 watched_at: watchedAt,
-                 liked: v.liked,
-                 bookmarked: v.bookmarked,
-                 is_private: v.is_private || false,
-                 duration: v.duration,
-                 metadata: v.metadata || {},
-                 curator: v.curator,
-                 category: v.category,
-                 created_at: v.created_at
-             });
-         }
+      setVideos((prevVideos) => {
+        const uniqueMap = new Map();
+        if (targetTab) {
+          for (const v of prevVideos) {
+            const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
+            const normUrl = normalizeUrl(v.url);
+            const key = ytId ? `yt_${ytId}` : `url_${normUrl}`;
+            uniqueMap.set(key, v);
+          }
+        }
+        
+        for (const v of data) {
+           const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
+           const normUrl = normalizeUrl(v.url);
+           const key = ytId ? `yt_${ytId}` : `url_${normUrl}`;
+           
+           const isClean = v.is_clean || v.is_watched || false;
+           const watchedAt = v.watched_at || (isClean ? v.created_at : null);
+           
+           if (uniqueMap.has(key)) {
+               const existing = uniqueMap.get(key);
+               if (isClean && !existing.is_clean) {
+                   existing.is_clean = true;
+                   existing.is_watched = true;
+                   existing.watched_at = watchedAt || new Date().toISOString();
+               }
+               if (v.liked !== undefined) existing.liked = v.liked;
+               if (v.bookmarked !== undefined) existing.bookmarked = v.bookmarked;
+               if (v.is_private !== undefined) existing.is_private = v.is_private;
+           } else {
+               uniqueMap.set(key, {
+                   id: v.id,
+                   videoId: ytId,
+                   video_id: ytId,
+                   url: v.url,
+                   type: ytId ? "video" : (v.type || "general"),
+                   title: v.title,
+                   source_name: v.source_name || v.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
+                   is_clean: isClean,
+                   is_watched: isClean,
+                   watched_at: watchedAt,
+                   liked: v.liked,
+                   bookmarked: v.bookmarked,
+                   is_private: v.is_private || false,
+                   duration: v.duration,
+                   metadata: v.metadata || {},
+                   curator: v.curator,
+                   category: v.category,
+                   created_at: v.created_at
+               });
+           }
+        }
+        return Array.from(uniqueMap.values());
+      });
+
+      if (targetTab) {
+        setLoadedTabs((prev) => new Set([...prev, targetTab]));
       }
-      setVideos(Array.from(uniqueMap.values()));
     } catch (err) {
       console.error("Cloud links fetch error:", err);
-      addToast("Bulut verileri alınamadı, çevrimdışı mod kullanılıyor.", "error");
-      loadLocalVideos();
+      if (!isBackground) {
+        addToast("Bulut verileri alınamadı, çevrimdışı mod kullanılıyor.", "error");
+        loadLocalVideos();
+      }
     } finally {
-      setIsLoading(false);
+      if (!isBackground) setIsLoading(false);
     }
   }
 
-  // Arka planda sessizce yenile — yükleme göstergesi olmadan sadece yeni videoları ekler
+  // Refresh server counts
+  const refreshStats = useCallback(async () => {
+    try {
+      const s = await api.getStats();
+      setStats(s);
+    } catch (e) {
+      console.debug("Failed to fetch stats:", e);
+    }
+  }, []);
+
+  // Sekme değiştiğinde daha önce çekilmemişse arka plandan ilgili sekmeyi lazy-load et
+  useEffect(() => {
+    if (!user) return;
+    const tabName = activeTab === "watched" ? "watched" : activeTab;
+    if (["watched", "liked", "saved", "private"].includes(tabName)) {
+      if (tabName === "private" && !isPrivateUnlocked) return;
+      if (!loadedTabs.has(tabName)) {
+        fetchCloudVideos({ tab: tabName, forcePrivate: tabName === "private" ? true : null });
+      }
+    }
+  }, [activeTab, user, loadedTabs, isPrivateUnlocked]);
+
+  // Arka planda sessizce yenile — aktif sekmeyi ve sayaçları tazeler
   async function silentRefreshVideos() {
     try {
-      const data = await api.getLinks(isPrivateUnlocked);
-      const mapped = data.map((v) => {
-        const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
-        const isClean = v.is_clean || v.is_watched || false;
-        return {
-          id: v.id,
-          videoId: ytId,
-          video_id: ytId,
-          url: v.url,
-          type: ytId ? "video" : (v.type || "general"),
-          title: v.title,
-          source_name: v.source_name || v.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
-          is_clean: isClean,
-          is_watched: isClean,
-          watched_at: v.watched_at || (isClean ? v.created_at : null),
-          liked: v.liked,
-          bookmarked: v.bookmarked,
-          is_private: v.is_private || false,
-          duration: v.duration,
-          metadata: v.metadata || {},
-          curator: v.curator,
-          category: v.category,
-          created_at: v.created_at
-        };
-      });
-      // Mevcut listeyle karşılaştır, sadece yeni ID'leri öne ekle
-      setVideos((prev) => {
-        const existingIds = new Set(prev.map((v) => v.id));
-        const existingVideoIds = new Set(prev.filter(v => v.videoId || v.video_id).map(v => v.videoId || v.video_id));
-        const existingUrls = new Set(prev.map(v => normalizeUrl(v.url)));
-
-        const newItems = mapped.filter((v) => {
-          if (existingIds.has(v.id)) return false;
-          
-          const vId = v.videoId || v.video_id;
-          if (vId && existingVideoIds.has(vId)) return false;
-          
-          if (existingUrls.has(normalizeUrl(v.url))) return false;
-          
-          return true;
-        });
-
-        if (newItems.length === 0) return prev; // Değişiklik yoksa state'i tetikleme
-        return [...newItems, ...prev];
-      });
-    } catch (err) {
-      // Sessiz hata — kullanıcıya toast gösterme
-      console.warn("Silent refresh failed:", err);
+      const tabParam = ["feed", "watched", "liked", "saved", "private"].includes(activeTab) ? activeTab : "feed";
+      await fetchCloudVideos({ tab: tabParam, isBackground: true });
+      refreshStats();
+    } catch (e) {
+      console.debug("Silent refresh error:", e);
     }
   }
 
@@ -812,6 +820,11 @@ export default function Home() {
           created_at: newLink.created_at
         };
         setVideos([mapped, ...videos]);
+        setStats((prev) => prev ? {
+          ...prev,
+          inbox: prev.inbox + 1,
+          private: mapped.is_private ? prev.private + 1 : prev.private
+        } : prev);
         addToast("Bağlantı buluta kaydedildi! ☁️", "success");
       } catch (err) {
         addToast("Bağlantı buluta kaydedilirken hata oluştu.", "error");
@@ -864,6 +877,10 @@ export default function Home() {
     const newLiked = !item.liked;
 
     // Optimistic UI update via functional state
+    setStats((prev) => prev ? {
+      ...prev,
+      liked: newLiked ? prev.liked + 1 : Math.max(0, prev.liked - 1)
+    } : prev);
     setVideos((prev) => {
       const updated = prev.map((v) =>
         v.id === id
@@ -976,6 +993,10 @@ export default function Home() {
     const newBookmarked = !item.bookmarked;
 
     // Optimistic UI update
+    setStats((prev) => prev ? {
+      ...prev,
+      saved: newBookmarked ? prev.saved + 1 : Math.max(0, prev.saved - 1)
+    } : prev);
     setVideos((prev) => {
       const updated = prev.map((v) =>
         v.id === id ? { ...v, bookmarked: newBookmarked } : v
@@ -1065,6 +1086,11 @@ export default function Home() {
     ]);
 
     // Optimistic UI update
+    setStats((prev) => prev ? {
+      ...prev,
+      inbox: nextState ? Math.max(0, prev.inbox - 1) : prev.inbox + 1,
+      archive: nextState ? prev.archive + 1 : Math.max(0, prev.archive - 1)
+    } : prev);
     setVideos((prev) => {
       const updated = prev.map((v) =>
         v.id === id ? { ...v, is_clean: nextState, is_watched: nextState, watched_at: newWatchedAt } : v
@@ -1121,6 +1147,11 @@ export default function Home() {
         v.id === id ? { ...v, is_clean: prevVal, is_watched: prevVal, watched_at: prevWatchedAt } : v
       );
       setVideos(updated);
+      setStats((prev) => prev ? {
+        ...prev,
+        inbox: prevVal ? Math.max(0, prev.inbox - 1) : prev.inbox + 1,
+        archive: prevVal ? prev.archive + 1 : Math.max(0, prev.archive - 1)
+      } : prev);
 
       if (user) {
         try {
@@ -1298,8 +1329,9 @@ export default function Home() {
   }, [isMounted, filteredVideos, displayedVideos, focusedIndex, isFocusOpen, selectedFocusLink, playingVideoId, hasMore, loadMore]);
 
   const pendingCount = useMemo(() => {
+    if (stats && typeof stats.inbox === "number") return stats.inbox;
     return videos.filter((v) => !(v.is_clean || v.is_watched) && !v.is_private).length;
-  }, [videos]);
+  }, [stats, videos]);
 
   if (!isMounted) {
     return (
@@ -1319,6 +1351,7 @@ export default function Home() {
         {/* Header Section */}
         <StatsHeader 
           videos={videos} 
+          stats={stats}
           user={user} 
           onLoginClick={() => setIsAuthModalOpen(true)} 
           onLogoutClick={handleLogout}
@@ -1386,6 +1419,13 @@ export default function Home() {
             >
               <Archive className="h-4 w-4" />
               <span>Watched</span>
+              {((stats ? stats.archive : videos.filter((v) => (v.is_clean || v.is_watched) && !v.is_private).length) > 0) && (
+                <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  activeTab === "watched" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
+                }`}>
+                  {stats ? stats.archive : videos.filter((v) => (v.is_clean || v.is_watched) && !v.is_private).length}
+                </span>
+              )}
             </button>
 
             <button
@@ -1401,11 +1441,11 @@ export default function Home() {
             >
               <Heart className={`h-4 w-4 ${activeTab === "liked" ? "fill-white" : ""}`} />
               <span>Liked</span>
-              {videos.filter((v) => v.liked && !v.is_private).length > 0 && (
+              {((stats ? stats.liked : videos.filter((v) => v.liked && !v.is_private).length) > 0) && (
                 <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   activeTab === "liked" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
                 }`}>
-                  {videos.filter((v) => v.liked && !v.is_private).length}
+                  {stats ? stats.liked : videos.filter((v) => v.liked && !v.is_private).length}
                 </span>
               )}
             </button>
@@ -1423,11 +1463,11 @@ export default function Home() {
             >
               <Bookmark className={`h-4 w-4 ${activeTab === "saved" ? "fill-white" : ""}`} />
               <span>Saved</span>
-              {videos.filter((v) => v.bookmarked && !v.is_private).length > 0 && (
+              {((stats ? stats.saved : videos.filter((v) => v.bookmarked && !v.is_private).length) > 0) && (
                 <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   activeTab === "saved" ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400 border border-white/5"
                 }`}>
-                  {videos.filter((v) => v.bookmarked && !v.is_private).length}
+                  {stats ? stats.saved : videos.filter((v) => v.bookmarked && !v.is_private).length}
                 </span>
               )}
             </button>

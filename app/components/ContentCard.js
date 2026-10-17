@@ -47,7 +47,21 @@ export default function ContentCard({
   const url = video.url || video.metadata?.url || "";
   const video_id = video.video_id || video.videoId || video.metadata?.video_id || getYouTubeId(url);
   const type = video_id ? "video" : (video.type || video.metadata?.type || "general");
-  const title = video.title || video.metadata?.title || (video_id ? "YouTube Videosu" : "Başlıksız Link");
+  // YouTube sonekini (" - YouTube") temizleyen yardımcı
+  const sanitizeTitle = (t) => {
+    if (!t) return "";
+    return t.replace(/\s*[-–—]\s*YouTube\s*$/i, "").trim();
+  };
+
+  const uncleanedTitle = video.title || video.metadata?.title || (video_id ? "YouTube Videosu" : "Başlıksız Link");
+  const rawTitle = sanitizeTitle(uncleanedTitle) || uncleanedTitle;
+  const [cardTitle, setCardTitle] = useState(rawTitle);
+  const title = cardTitle;
+
+  // Prop güncellendiğinde veya sekme geçişlerinde başlık state'ini senkronize et
+  useEffect(() => {
+    setCardTitle(rawTitle);
+  }, [rawTitle]);
   const metadata = video.metadata || {};
   const channel_name = channelTitle || video.channelTitle || metadata.channelTitle || metadata.channel_title || metadata.author_name || video.author_name;
   const source_name = (type === "video" && video_id)
@@ -134,15 +148,39 @@ export default function ContentCard({
             .catch(() => {});
         }
 
-        // Kanal adını oEmbed ile dinamik tamamla (eğer mevcut değilse)
+        // Generic başlık kontrolü (Örn: "YouTube", "YouTube Video")
+        const isGenericTitle = (t) => {
+          if (!t) return true;
+          const lower = t.trim().toLowerCase();
+          return (
+            lower === "" ||
+            lower === "youtube" ||
+            lower === "youtube video" ||
+            lower === "youtube videosu" ||
+            lower === "unknown title" ||
+            lower === "bilinmeyen başlık" ||
+            lower === "- youtube" ||
+            lower === "video"
+          );
+        };
+
+        // Video başlığı ve kanal adını oEmbed ile dinamik tamamla / kendi kendini onar
         const existingChannel = video.channelTitle || metadata?.channelTitle || metadata?.channel_title || metadata?.author_name || (video.source_name && video.source_name !== "YouTube" ? video.source_name : null);
         if (existingChannel) {
           setChannelTitle(existingChannel);
-        } else {
+        }
+
+        const needsTitleFix = isGenericTitle(rawTitle);
+        const needsChannelFix = !existingChannel;
+
+        if (needsTitleFix || needsChannelFix) {
           fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${video_id}&format=json`)
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
-              if (data?.author_name) {
+              if (data?.title && needsTitleFix) {
+                setCardTitle(sanitizeTitle(data.title) || data.title);
+              }
+              if (data?.author_name && needsChannelFix) {
                 setChannelTitle(data.author_name);
               }
             })

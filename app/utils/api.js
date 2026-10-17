@@ -129,9 +129,24 @@ export const api = {
   },
 
   // Links CRUD
-  async getLinks(includePrivate = false) {
-    const query = (includePrivate && memoryVaultToken) ? "?include_private=true" : "";
-    return request(`/links/${query}`);
+  async getStats() {
+    return request("/links/stats/");
+  },
+
+  async getLinks(options = {}) {
+    const isBool = typeof options === "boolean";
+    const includePrivate = isBool ? options : (options.includePrivate || false);
+    const tab = isBool ? "" : (options.tab || "");
+
+    const params = new URLSearchParams();
+    if (includePrivate && memoryVaultToken) {
+      params.append("include_private", "true");
+    }
+    if (tab) {
+      params.append("tab", tab);
+    }
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request(`/links/${qs}`);
   },
 
   async addLink(linkData) {
