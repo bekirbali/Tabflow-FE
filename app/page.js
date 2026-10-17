@@ -92,7 +92,7 @@ export default function Home() {
   // Secret / Private tab unlock handler
   const handleSecretUnlock = async (password) => {
     if (!user) {
-      addToast("Ğifreli giriş için önce oturum açmanız gerekiyor.", "warning");
+      addToast("Şifreli giriş için önce oturum açmanız gerekiyor.", "warning");
       return false;
     }
     const ok = await api.verifyPassword(password);
@@ -100,6 +100,8 @@ export default function Home() {
       setIsPrivateUnlocked(true);
       setActiveTab("private");
       setFocusedIndex(-1);
+      // Backend'den gizli linkleri de çekerek state'i güncelle
+      await fetchCloudVideos(true);
       addToast("🔒 Gizli akış açıldı.", "success");
     } else {
       addToast("Şifre hatalı. Gizli akışa giriş reddedildi.", "error");
@@ -298,10 +300,11 @@ export default function Home() {
   }, [activeTab, discoverFilter]);
 
   // Fetch from Django Cloud Database
-  async function fetchCloudVideos() {
+  async function fetchCloudVideos(forcePrivate = null) {
     setIsLoading(true);
     try {
-      const data = await api.getLinks();
+      const shouldIncludePrivate = forcePrivate !== null ? forcePrivate : isPrivateUnlocked;
+      const data = await api.getLinks(shouldIncludePrivate);
       
       const uniqueMap = new Map();
       
@@ -358,7 +361,7 @@ export default function Home() {
   // Arka planda sessizce yenile — yükleme göstergesi olmadan sadece yeni videoları ekler
   async function silentRefreshVideos() {
     try {
-      const data = await api.getLinks();
+      const data = await api.getLinks(isPrivateUnlocked);
       const mapped = data.map((v) => {
         const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
         const isClean = v.is_clean || v.is_watched || false;
@@ -1456,9 +1459,12 @@ export default function Home() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    api.clearVaultToken();
                     setIsPrivateUnlocked(false);
                     setActiveTab("feed");
                     setFocusedIndex(-1);
+                    setVideos((prev) => prev.filter((v) => !v.is_private));
+                    addToast("🔒 Gizli akış kilitlendi.", "info");
                   }}
                   title="Gizli akışı kilitle"
                   className={`mr-1.5 flex items-center justify-center h-5 w-5 rounded-md text-[11px] font-bold transition-all duration-200 cursor-pointer ${

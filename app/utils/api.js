@@ -1,5 +1,7 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
+let memoryVaultToken = null;
+
 function getHeaders() {
   const headers = {
     "Content-Type": "application/json",
@@ -9,6 +11,9 @@ function getHeaders() {
     if (token) {
       headers["Authorization"] = `Token ${token}`;
     }
+  }
+  if (memoryVaultToken) {
+    headers["X-Vault-Token"] = memoryVaultToken;
   }
   return headers;
 }
@@ -53,6 +58,17 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
+  // Vault Token in-memory management (Zero LocalStorage persistence)
+  setVaultToken(token) {
+    memoryVaultToken = token;
+  },
+  getVaultToken() {
+    return memoryVaultToken;
+  },
+  clearVaultToken() {
+    memoryVaultToken = null;
+  },
+
   // Authentication
   async register(email, password, username) {
     const data = await request("/auth/register/", {
@@ -79,6 +95,7 @@ export const api = {
   },
 
   logout() {
+    memoryVaultToken = null;
     localStorage.removeItem("tabflow_token");
     localStorage.removeItem("tabflow_user");
   },
@@ -93,6 +110,7 @@ export const api = {
 
   /**
    * Gizli sekme unlock: mevcut oturumu bozmadan sadece şifre doğrular.
+   * Şifre doğruysa 30 dakika geçerli imzalı vault_token hafızaya alınır.
    * Returns true if password is correct, false otherwise.
    */
   async verifyPassword(password) {
@@ -101,6 +119,9 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ password }),
       });
+      if (data.valid === true && data.vault_token) {
+        memoryVaultToken = data.vault_token;
+      }
       return data.valid === true;
     } catch {
       return false;
@@ -108,8 +129,9 @@ export const api = {
   },
 
   // Links CRUD
-  async getLinks() {
-    return request("/links/");
+  async getLinks(includePrivate = false) {
+    const query = (includePrivate && memoryVaultToken) ? "?include_private=true" : "";
+    return request(`/links/${query}`);
   },
 
   async addLink(linkData) {
