@@ -643,13 +643,7 @@ export default function ContentCard({
                     <Play className="h-7 w-7 text-white fill-white ml-1" />
                   </button>
                 </div>
-                {/* Duration Badge */}
-                {duration && (
-                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-white/10 backdrop-blur-md text-xs font-bold text-white shadow-lg pointer-events-none z-10">
-                    <Clock className="h-3.5 w-3.5 text-rose-400" />
-                    <span>{duration}</span>
-                  </div>
-                )}
+
                 {/* Resume from where you left off badge */}
                 {savedProgress > 5 && (
                   <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-950/90 border border-violet-500/40 backdrop-blur-md text-[11px] font-bold text-violet-200 shadow-xl pointer-events-none z-10">
