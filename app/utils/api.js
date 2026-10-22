@@ -2,6 +2,37 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/a
 
 let memoryVaultToken = null;
 
+function _getVaultToken() {
+  if (memoryVaultToken) return memoryVaultToken;
+  if (typeof window !== "undefined") {
+    try {
+      const stored = sessionStorage.getItem("tabflow_vault_token");
+      if (stored) {
+        memoryVaultToken = stored;
+        return stored;
+      }
+    } catch {
+      // sessionStorage unavailable
+    }
+  }
+  return null;
+}
+
+function _setVaultToken(token) {
+  memoryVaultToken = token || null;
+  if (typeof window !== "undefined") {
+    try {
+      if (token) {
+        sessionStorage.setItem("tabflow_vault_token", token);
+      } else {
+        sessionStorage.removeItem("tabflow_vault_token");
+      }
+    } catch {
+      // sessionStorage unavailable
+    }
+  }
+}
+
 function getHeaders() {
   const headers = {
     "Content-Type": "application/json",
@@ -12,8 +43,9 @@ function getHeaders() {
       headers["Authorization"] = `Token ${token}`;
     }
   }
-  if (memoryVaultToken) {
-    headers["X-Vault-Token"] = memoryVaultToken;
+  const vaultToken = _getVaultToken();
+  if (vaultToken) {
+    headers["X-Vault-Token"] = vaultToken;
   }
   return headers;
 }
@@ -58,15 +90,15 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
-  // Vault Token in-memory management (Zero LocalStorage persistence)
+  // Vault Token session management (SessionStorage persistence across refreshes)
   setVaultToken(token) {
-    memoryVaultToken = token;
+    _setVaultToken(token);
   },
   getVaultToken() {
-    return memoryVaultToken;
+    return _getVaultToken();
   },
   clearVaultToken() {
-    memoryVaultToken = null;
+    _setVaultToken(null);
   },
 
   // Authentication
@@ -95,7 +127,7 @@ export const api = {
   },
 
   logout() {
-    memoryVaultToken = null;
+    _setVaultToken(null);
     localStorage.removeItem("tabflow_token");
     localStorage.removeItem("tabflow_user");
   },
@@ -120,7 +152,7 @@ export const api = {
         body: JSON.stringify({ password }),
       });
       if (data.valid === true && data.vault_token) {
-        memoryVaultToken = data.vault_token;
+        _setVaultToken(data.vault_token);
       }
       return data.valid === true;
     } catch {
@@ -139,7 +171,8 @@ export const api = {
     const tab = isBool ? "" : (options.tab || "");
 
     const params = new URLSearchParams();
-    if (includePrivate && memoryVaultToken) {
+    const vaultToken = _getVaultToken();
+    if (includePrivate && vaultToken) {
       params.append("include_private", "true");
     }
     if (tab) {

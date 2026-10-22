@@ -123,8 +123,12 @@ export default function Home() {
         if (currentUser.api_key && typeof window !== "undefined") {
           window.postMessage({ action: "tabflow_auth_success", apiKey: currentUser.api_key }, window.location.origin);
         }
+        const hasVault = !!api.getVaultToken();
+        if (hasVault) {
+          setIsPrivateUnlocked(true);
+        }
         refreshStats();
-        fetchCloudVideos({ tab: "feed" });
+        fetchCloudVideos({ tab: "feed", forcePrivate: hasVault });
       } else {
         loadLocalVideos();
       }
