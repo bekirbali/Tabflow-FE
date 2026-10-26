@@ -88,7 +88,6 @@ function renderClickableText(text) {
 
 export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
   const [fontSize, setFontSize] = useState("base"); // "sm" | "base" | "lg" | "xl"
-  const [initialStartSec, setInitialStartSec] = useState(0);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [isHistorySynced, setIsHistorySynced] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -99,50 +98,56 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const modalIframeRef = React.useRef(null);
 
-  const video_id = video ? (video.video_id || video.videoId || getYouTubeId(video.url)) : null;
+  const video_id = video ? (video.video_id || video.videoId || video.metadata?.video_id || getYouTubeId(video.url)) : null;
+
+  // Başlangıç süresini doğrudan senkron oku (iframe ilk render'da doğru süreyle DOM'a girsin)
+  const getSavedProgressSec = () => {
+    if (typeof window !== "undefined" && video_id) {
+      const saved = localStorage.getItem(`yt_progress_${video_id}`);
+      if (saved && !isNaN(Number(saved))) {
+        const sec = Number(saved);
+        return sec > 3 ? sec : 0;
+      }
+    }
+    return 0;
+  };
+
+  const [initialStartSec, setInitialStartSec] = useState(getSavedProgressSec);
 
   // Load saved progress & sync status once when modal opens
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (typeof window !== "undefined" && video_id && isOpen) {
-        const saved = localStorage.getItem(`yt_progress_${video_id}`);
-        if (saved && !isNaN(Number(saved))) {
-          const sec = Number(saved);
-          setInitialStartSec(sec > 3 ? sec : 0);
-        } else {
-          setInitialStartSec(0);
-        }
+    if (typeof window !== "undefined" && video_id && isOpen) {
+      const sec = getSavedProgressSec();
+      setInitialStartSec(sec);
 
-        const synced = localStorage.getItem(`yt_synced_${video_id}`);
-        if (synced === "true") {
-          setIsHistorySynced(true);
-        } else {
-          setIsHistorySynced(false);
-        }
-
-        const channelId = video?.metadata?.channel_id;
-        const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
-        const cachedSub = localStorage.getItem(subKey) || localStorage.getItem(`yt_sub_vid_${video_id}`);
-        if (cachedSub === "true") {
-          setIsSubscribed(true);
-        } else if (cachedSub === "false") {
-          setIsSubscribed(false);
-        }
-
-        // YouTube OAuth bağlıysa gerçek zamanlı durumu sorgula
-        if (isYouTubeConnected()) {
-          checkYouTubeSubscriptionStatus({ videoId: video_id, channelId })
-            .then((res) => {
-              if (res && res.success && typeof res.subscribed === "boolean") {
-                setIsSubscribed(res.subscribed);
-                if (res.channelTitle) setChannelTitle(res.channelTitle);
-              }
-            })
-            .catch(() => {});
-        }
+      const synced = localStorage.getItem(`yt_synced_${video_id}`);
+      if (synced === "true") {
+        setIsHistorySynced(true);
+      } else {
+        setIsHistorySynced(false);
       }
-    }, 0);
-    return () => clearTimeout(timer);
+
+      const channelId = video?.metadata?.channel_id;
+      const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
+      const cachedSub = localStorage.getItem(subKey) || localStorage.getItem(`yt_sub_vid_${video_id}`);
+      if (cachedSub === "true") {
+        setIsSubscribed(true);
+      } else if (cachedSub === "false") {
+        setIsSubscribed(false);
+      }
+
+      // YouTube OAuth bağlıysa gerçek zamanlı durumu sorgula
+      if (isYouTubeConnected()) {
+        checkYouTubeSubscriptionStatus({ videoId: video_id, channelId })
+          .then((res) => {
+            if (res && res.success && typeof res.subscribed === "boolean") {
+              setIsSubscribed(res.subscribed);
+              if (res.channelTitle) setChannelTitle(res.channelTitle);
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }, [video_id, isOpen, video?.metadata?.channel_id]);
 
   // YouTube Abonelik Değişikliklerini Dinle
@@ -349,25 +354,56 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
   useEffect(() => {
     if (!isOpen || !video_id || typeof window === "undefined") return;
 
+    // Başlangıçta hedeflenen süreye ulaşılana kadar ilk tamponlama/seek
+    // anındaki küçük saniyelerin (örneğin 0, 5, 20 sn) mevcut kaydı ezmesini engelle
+    let targetReached = initialStartSec <= 5;
+
     const handleYTMessage = (event) => {
       try {
+        // 1. Sadece modal içindeki iframe'den gelen mesajları dinle
+        if (modalIframeRef.current && event.source !== modalIframeRef.current.contentWindow) {
+          return;
+        }
+
         if (typeof event.data === "string") {
           const data = JSON.parse(event.data);
           if (data.event === "infoDelivery" && data.info && data.info.currentTime !== undefined) {
             const time = Math.floor(data.info.currentTime);
+
+            // Henüz hedeflenen süreye (örneğin 600. sn) ulaşılmadıysa ve gelen değer gerideyse kaydetme
+            if (!targetReached) {
+              if (time >= initialStartSec - 5) {
+                targetReached = true;
+              } else {
+                return;
+              }
+            }
+
             if (time > 2) {
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
+              // Kartları ve diğer dinleyicileri anlık bilgilendir
+              window.dispatchEvent(
+                new CustomEvent("tabflow_progress_updated", {
+                  detail: { videoId: video_id, time },
+                })
+              );
             }
           }
+
           // Video tamamen bittiğinde (playerState: 0) kaydı temizle
-          // ÖNEMLİ: Burada setInitialStartSec(0) çağırmıyoruz! Çağrılırsa iframe'in src prop'u
-          // değişir ve tarayıcı iframe'i baştan yükleyip autoplay ile videoyu 0'dan yeniden başlatır.
+          // Katı kontrol: Sadece YouTube'un gerçek playerState === 0 bilgisi geldiğinde sıfırla
           const isEnded =
-            (data.event === "infoDelivery" && data.info && data.info.playerState === 0) ||
-            (data.event === "onStateChange" && (data.info === 0 || data.data === 0));
+            data.event === "infoDelivery" &&
+            data.info &&
+            data.info.playerState === 0;
 
           if (isEnded) {
             localStorage.removeItem(`yt_progress_${video_id}`);
+            window.dispatchEvent(
+              new CustomEvent("tabflow_progress_updated", {
+                detail: { videoId: video_id, time: 0 },
+              })
+            );
           }
         }
       } catch (e) {}
@@ -388,7 +424,7 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
       window.removeEventListener("message", handleYTMessage);
       clearInterval(interval);
     };
-  }, [isOpen, video_id]);
+  }, [isOpen, video_id, initialStartSec]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {

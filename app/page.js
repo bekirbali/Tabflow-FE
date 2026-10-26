@@ -1662,7 +1662,9 @@ export default function Home() {
                       onDelete={handleDeleteVideo}
                       onAction={handleActionVideo}
                       isFocused={focusedIndex === idx}
+                      activePlayingId={playingVideoId}
                       onFocusClick={(item) => {
+                        setPlayingVideoId(null);
                         setSelectedFocusLink(item);
                         setIsFocusOpen(true);
                       }}

@@ -22,14 +22,32 @@ export default function ContentCard({
   onFocusClick, // Callback to open Focus Mode modal
   isFocused, // Keyboard navigation state
   onPlayStart, // Callback when playback starts
+  activePlayingId, // Active playing card ID to prevent multiple simultaneous players
   addToast,
   onAddToFeed,
   isInFeed
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
-  const [savedProgress, setSavedProgress] = useState(0);
-  const [initialStartSec, setInitialStartSec] = useState(0);
+
+  // Normalize properties for backward compatibility
+  const id = video.id || video.videoId;
+  const url = video.url || video.metadata?.url || "";
+  const video_id = video.video_id || video.videoId || video.metadata?.video_id || getYouTubeId(url);
+  const type = video_id ? "video" : (video.type || video.metadata?.type || "general");
+
+  const [savedProgress, setSavedProgress] = useState(() => {
+    if (typeof window !== "undefined" && video_id) {
+      const saved = localStorage.getItem(`yt_progress_${video_id}`);
+      if (saved && !isNaN(Number(saved))) {
+        return Number(saved);
+      }
+    }
+    return 0;
+  });
+  const [initialStartSec, setInitialStartSec] = useState(() => {
+    return savedProgress > 3 ? savedProgress : 0;
+  });
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [isHistorySynced, setIsHistorySynced] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -42,11 +60,6 @@ export default function ContentCard({
   const cardRef = React.useRef(null);
   const iframeRef = React.useRef(null);
 
-  // Normalize properties for backward compatibility
-  const id = video.id || video.videoId;
-  const url = video.url || video.metadata?.url || "";
-  const video_id = video.video_id || video.videoId || video.metadata?.video_id || getYouTubeId(url);
-  const type = video_id ? "video" : (video.type || video.metadata?.type || "general");
   // YouTube sonekini (" - YouTube") temizleyen yardımcı
   const sanitizeTitle = (t) => {
     if (!t) return "";
@@ -108,45 +121,67 @@ export default function ContentCard({
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
+  // Başka bir video başlatıldığında bu kartı durdur
+  React.useEffect(() => {
+    if (isPlaying && activePlayingId && activePlayingId !== (video.id || video.videoId || video_id)) {
+      setIsPlaying(false);
+    }
+  }, [activePlayingId, isPlaying, video.id, video.videoId, video_id]);
+
+  // Modal veya başka bir bileşen süreyi güncellediğinde bu kartın ilerleme rozetini anında senkronize et
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !video_id) return;
+
+    const onProgressUpdated = (e) => {
+      if (e.detail && e.detail.videoId === video_id) {
+        const time = Number(e.detail.time) || 0;
+        setSavedProgress(time);
+        setInitialStartSec(time > 3 ? time : 0);
+      }
+    };
+
+    window.addEventListener("tabflow_progress_updated", onProgressUpdated);
+    return () => window.removeEventListener("tabflow_progress_updated", onProgressUpdated);
+  }, [video_id]);
+
   // 1. Kaldığı yerden devam et & YouTube geçmiş eşitleme durumunu localStorage'dan oku
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      if (typeof window !== "undefined" && video_id) {
-        const saved = localStorage.getItem(`yt_progress_${video_id}`);
-        if (saved && !isNaN(Number(saved))) {
-          const sec = Number(saved);
-          setSavedProgress(sec);
-          setInitialStartSec(sec > 3 ? sec : 0);
-        } else {
-          setSavedProgress(0);
-          setInitialStartSec(0);
-        }
+    if (typeof window !== "undefined" && video_id) {
+      const saved = localStorage.getItem(`yt_progress_${video_id}`);
+      if (saved && !isNaN(Number(saved))) {
+        const sec = Number(saved);
+        setSavedProgress(sec);
+        setInitialStartSec(sec > 3 ? sec : 0);
+      } else {
+        setSavedProgress(0);
+        setInitialStartSec(0);
+      }
 
-        const synced = localStorage.getItem(`yt_synced_${video_id}`);
-        if (synced === "true") {
-          setIsHistorySynced(true);
-        }
+      const synced = localStorage.getItem(`yt_synced_${video_id}`);
+      if (synced === "true") {
+        setIsHistorySynced(true);
+      }
 
-        const channelId = metadata?.channel_id;
-        const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
-        const cachedSub = localStorage.getItem(subKey) || localStorage.getItem(`yt_sub_vid_${video_id}`);
-        if (cachedSub === "true") {
-          setIsSubscribed(true);
-        } else if (cachedSub === "false") {
-          setIsSubscribed(false);
-        }
+      const channelId = metadata?.channel_id;
+      const subKey = channelId ? `yt_sub_ch_${channelId}` : `yt_sub_vid_${video_id}`;
+      const cachedSub = localStorage.getItem(subKey) || localStorage.getItem(`yt_sub_vid_${video_id}`);
+      if (cachedSub === "true") {
+        setIsSubscribed(true);
+      } else if (cachedSub === "false") {
+        setIsSubscribed(false);
+      }
 
-        // YouTube OAuth bağlıysa, güncel abonelik durumunu API'den dinamik sorgula
-        if (isYouTubeConnected()) {
-          checkYouTubeSubscriptionStatus({ videoId: video_id, channelId })
-            .then((res) => {
-              if (res && res.success && typeof res.subscribed === "boolean") {
-                setIsSubscribed(res.subscribed);
-                if (res.channelTitle) setChannelTitle(res.channelTitle);
-              }
-            })
-            .catch(() => {});
-        }
+      // YouTube OAuth bağlıysa, güncel abonelik durumunu API'den dinamik sorgula
+      if (isYouTubeConnected()) {
+        checkYouTubeSubscriptionStatus({ videoId: video_id, channelId })
+          .then((res) => {
+            if (res && res.success && typeof res.subscribed === "boolean") {
+              setIsSubscribed(res.subscribed);
+              if (res.channelTitle) setChannelTitle(res.channelTitle);
+            }
+          })
+          .catch(() => {});
+      }
 
         // Generic başlık kontrolü (Örn: "YouTube", "YouTube Video")
         const isGenericTitle = (t) => {
@@ -186,9 +221,7 @@ export default function ContentCard({
             })
             .catch(() => {});
         }
-      }
-    }, 0);
-    return () => clearTimeout(timer);
+    }
   }, [video_id, metadata?.channel_id]);
 
   // YouTube Abonelik Olaylarını Dinle (diğer kartlardan veya modalden gelen güncellemeler)
@@ -431,25 +464,55 @@ export default function ContentCard({
   React.useEffect(() => {
     if (!isPlaying || !video_id || typeof window === "undefined") return;
 
+    let targetReached = initialStartSec <= 5;
+
     const handleYTMessage = (event) => {
       try {
+        // 1. Sadece bu kartın iframe'inden gelen mesajları kabul et
+        if (iframeRef.current && event.source !== iframeRef.current.contentWindow) {
+          return;
+        }
+
         if (typeof event.data === "string") {
           const data = JSON.parse(event.data);
           if (data.event === "infoDelivery" && data.info && data.info.currentTime !== undefined) {
             const time = Math.floor(data.info.currentTime);
+
+            // Başlangıçta hedeflenen süreye (örneğin 600. sn) ulaşılana kadar ilk tamponlama değerlerinin kaydı ezmesini engelle
+            if (!targetReached) {
+              if (time >= initialStartSec - 5) {
+                targetReached = true;
+              } else {
+                return;
+              }
+            }
+
             if (time > 2) {
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
+              setSavedProgress(time);
+              window.dispatchEvent(
+                new CustomEvent("tabflow_progress_updated", {
+                  detail: { videoId: video_id, time },
+                })
+              );
             }
           }
+
           // Video tamamen bittiğinde (playerState: 0) kaydı temizle ve oynatmayı durdur
           const isEnded =
-            (data.event === "infoDelivery" && data.info && data.info.playerState === 0) ||
-            (data.event === "onStateChange" && (data.info === 0 || data.data === 0));
+            data.event === "infoDelivery" &&
+            data.info &&
+            data.info.playerState === 0;
 
           if (isEnded) {
             localStorage.removeItem(`yt_progress_${video_id}`);
             setSavedProgress(0);
             setIsPlaying(false);
+            window.dispatchEvent(
+              new CustomEvent("tabflow_progress_updated", {
+                detail: { videoId: video_id, time: 0 },
+              })
+            );
           }
         }
       } catch (e) {}
@@ -471,7 +534,7 @@ export default function ContentCard({
       window.removeEventListener("message", handleYTMessage);
       clearInterval(interval);
     };
-  }, [isPlaying, video_id]);
+  }, [isPlaying, video_id, initialStartSec]);
 
   const handleActionClick = (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
@@ -500,6 +563,7 @@ export default function ContentCard({
   // Helper to open the focus modal
   const handleFocusClick = (e) => {
     e.stopPropagation();
+    setIsPlaying(false); // Modal açılırken arka planda video çalmasını derhal durdur
     if (onFocusClick) {
       onFocusClick(video);
     }
@@ -509,16 +573,18 @@ export default function ContentCard({
   const handlePlayClick = (e) => {
     e.stopPropagation();
     if (type === "video" && video_id) {
+      let sec = 0;
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem(`yt_progress_${video_id}`);
         if (saved && !isNaN(Number(saved))) {
-          const sec = Number(saved);
-          setInitialStartSec(sec > 3 ? sec : 0);
+          sec = Number(saved);
         }
       }
+      setInitialStartSec(sec > 3 ? sec : 0);
+      setSavedProgress(sec);
       setIsPlaying(true);
       if (onPlayStart) {
-        onPlayStart(video.id);
+        onPlayStart(video.id || video.videoId || video_id);
       }
     } else if (onFocusClick) {
       onFocusClick(video);
