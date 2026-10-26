@@ -381,12 +381,6 @@ export default function FocusModeModal({ video, isOpen, onClose, addToast }) {
 
             if (time > 2) {
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
-              // Kartları ve diğer dinleyicileri anlık bilgilendir
-              window.dispatchEvent(
-                new CustomEvent("tabflow_progress_updated", {
-                  detail: { videoId: video_id, time },
-                })
-              );
             }
           }
 

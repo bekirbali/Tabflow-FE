@@ -128,7 +128,8 @@ export default function ContentCard({
     }
   }, [activePlayingId, isPlaying, video.id, video.videoId, video_id]);
 
-  // Modal veya başka bir bileşen süreyi güncellediğinde bu kartın ilerleme rozetini anında senkronize et
+  // Modal veya başka bir bileşen süreyi güncellediğinde bu kartın ilerleme rozetini senkronize et
+  // ÖNEMLİ: initialStartSec burada ASLA güncellenmez, aksi halde iframe src değişip reload döngüsüne girer!
   React.useEffect(() => {
     if (typeof window === "undefined" || !video_id) return;
 
@@ -136,7 +137,6 @@ export default function ContentCard({
       if (e.detail && e.detail.videoId === video_id) {
         const time = Number(e.detail.time) || 0;
         setSavedProgress(time);
-        setInitialStartSec(time > 3 ? time : 0);
       }
     };
 
@@ -489,12 +489,6 @@ export default function ContentCard({
 
             if (time > 2) {
               localStorage.setItem(`yt_progress_${video_id}`, time.toString());
-              setSavedProgress(time);
-              window.dispatchEvent(
-                new CustomEvent("tabflow_progress_updated", {
-                  detail: { videoId: video_id, time },
-                })
-              );
             }
           }
 
