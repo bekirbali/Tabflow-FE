@@ -354,18 +354,18 @@ export default function ContentCard({
 
     let startedReceived = false;
 
-    // 2.5 saniye içinde eklentiden başlatma sinyali gelmezse kullanıcıyı bilgilendir
+    // 6.5 saniye içinde eklentiden başlatma sinyali gelmezse kullanıcıyı bilgilendir (Cold start toleransı)
     const extensionWatchdog = setTimeout(() => {
       if (!startedReceived) {
         setIsSyncingHistory(false);
         if (addToast) {
           addToast(
-            "TabFlow eklentisine ulaşılamadı. Eklentinin yüklü olduğundan ve bu sayfayı (F5) yenilediğinizden emin olun.",
+            "TabFlow eklentisine ulaşılamadı. Eklentinin yüklü ve aktif olduğundan emin olun.",
             "warning"
           );
         }
       }
-    }, 2500);
+    }, 6500);
 
     const onBridgeMessage = (event) => {
       if (

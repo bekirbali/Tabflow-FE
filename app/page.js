@@ -343,6 +343,9 @@ export default function Home() {
            
            if (uniqueMap.has(key)) {
                const existing = uniqueMap.get(key);
+               if (v.id && existing.id !== v.id) {
+                   existing.id = v.id;
+               }
                if (isClean && !existing.is_clean) {
                    existing.is_clean = true;
                    existing.is_watched = true;
@@ -879,6 +882,8 @@ export default function Home() {
     const item = videos.find((v) => v.id === id);
     if (!item) return;
     const newLiked = !item.liked;
+    const previousVideos = videos;
+    const previousStats = stats;
 
     // Optimistic UI update via functional state
     setStats((prev) => prev ? {
@@ -909,7 +914,8 @@ export default function Home() {
         });
         addToast(newLiked ? "Beğenildi! ❤️" : "Beğeni geri alındı.", "success");
       } catch (err) {
-        fetchCloudVideos();
+        setVideos(previousVideos);
+        setStats(previousStats);
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
@@ -936,6 +942,7 @@ export default function Home() {
     const item = videos.find((v) => v.id === id);
     if (!item) return;
     const newDisliked = !item.disliked;
+    const previousVideos = videos;
 
     // Optimistic UI update via functional state
     setVideos((prev) => {
@@ -965,7 +972,7 @@ export default function Home() {
           "info"
         );
       } catch (err) {
-        fetchCloudVideos();
+        setVideos(previousVideos);
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
@@ -995,6 +1002,8 @@ export default function Home() {
     const item = videos.find((v) => v.id === id);
     if (!item) return;
     const newBookmarked = !item.bookmarked;
+    const previousVideos = videos;
+    const previousStats = stats;
 
     // Optimistic UI update
     setStats((prev) => prev ? {
@@ -1016,7 +1025,8 @@ export default function Home() {
         await api.updateLink(id, { bookmarked: newBookmarked });
         addToast(newBookmarked ? "Yer imlerine eklendi! 🔖" : "Yer imi kaldırıldı.", "success");
       } catch (err) {
-        fetchCloudVideos();
+        setVideos(previousVideos);
+        setStats(previousStats);
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
@@ -1083,6 +1093,9 @@ export default function Home() {
     const nowIso = new Date().toISOString();
     const newWatchedAt = nextState ? nowIso : null;
 
+    const previousVideos = videos;
+    const previousStats = stats;
+
     // Push operation to undo stack
     setUndoStack((prev) => [
       ...prev,
@@ -1120,7 +1133,9 @@ export default function Home() {
           addToast("İçerik tekrar Inbox'a taşındı.", "success");
         }
       } catch (err) {
-        fetchCloudVideos();
+        setVideos(previousVideos);
+        setStats(previousStats);
+        setUndoStack((prev) => prev.slice(0, prev.length - 1));
         addToast("İşlem gerçekleştirilemedi.", "error");
       }
     } else {
