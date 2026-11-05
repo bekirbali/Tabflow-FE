@@ -27,9 +27,10 @@ export async function GET(request) {
     // ─── 1. Bir Yorumun Yanıtlarını (Replies) Çek ─────────────────────────────
     if (parentId) {
       const pageToken = searchParams.get("pageToken");
+      const maxResults = searchParams.get("maxResults") || "10";
       let repliesUrl = `https://www.googleapis.com/youtube/v3/comments?part=snippet&parentId=${encodeURIComponent(
         parentId
-      )}&maxResults=50&key=${apiKey}`;
+      )}&maxResults=${encodeURIComponent(maxResults)}&key=${apiKey}`;
 
       if (pageToken) {
         repliesUrl += `&pageToken=${encodeURIComponent(pageToken)}`;
@@ -79,7 +80,7 @@ export async function GET(request) {
 
     const pageToken = searchParams.get("pageToken");
 
-    let ytUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet,replies&videoId=${encodeURIComponent(
+    let ytUrl = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(
       videoId
     )}&maxResults=25&order=relevance&key=${apiKey}`;
 
@@ -135,22 +136,6 @@ export async function GET(request) {
 
     const comments = rawItems.map((item) => {
       const topComment = item.snippet?.topLevelComment?.snippet || {};
-      const rawReplies = item.replies?.comments || [];
-      const replies = rawReplies.map((reply) => {
-        const repSnippet = reply.snippet || {};
-        return {
-          id: reply.id,
-          parentId: item.id,
-          authorDisplayName: repSnippet.authorDisplayName || "Kullanıcı",
-          authorProfileImageUrl: repSnippet.authorProfileImageUrl || "",
-          authorChannelUrl: repSnippet.authorChannelUrl || "",
-          authorChannelId: repSnippet.authorChannelId?.value || "",
-          textDisplay: repSnippet.textDisplay || "",
-          textOriginal: repSnippet.textOriginal || "",
-          likeCount: repSnippet.likeCount || 0,
-          publishedAt: repSnippet.publishedAt || null,
-        };
-      });
 
       return {
         id: item.id,
@@ -163,7 +148,7 @@ export async function GET(request) {
         likeCount: topComment.likeCount || 0,
         publishedAt: topComment.publishedAt || null,
         totalReplyCount: item.snippet?.totalReplyCount || 0,
-        replies,
+        replies: [],
       };
     });
 

@@ -60,6 +60,7 @@ export default function YouTubeComments({ videoId, addToast, totalCommentCount, 
   const [ownCommentIds, setOwnCommentIds] = useState(new Set());
   const [openReplies, setOpenReplies] = useState(new Set());
   const [loadingReplies, setLoadingReplies] = useState(new Set());
+  const [loadingMoreReplies, setLoadingMoreReplies] = useState(new Set());
   const [replyingToId, setReplyingToId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
@@ -90,6 +91,9 @@ export default function YouTubeComments({ videoId, addToast, totalCommentCount, 
     setLoading(true);
     setError(null);
     setDisabled(false);
+    setOpenReplies(new Set());
+    setLoadingReplies(new Set());
+    setLoadingMoreReplies(new Set());
 
     try {
       const res = await fetch(`/api/youtube/comments?videoId=${encodeURIComponent(videoId)}`);
@@ -234,6 +238,7 @@ export default function YouTubeComments({ videoId, addToast, totalCommentCount, 
                 ...c,
                 totalReplyCount: (c.totalReplyCount || 0) + 1,
                 replies: [...currentReplies, createdReply],
+                repliesFetched: true,
               };
             }
             return c;
@@ -326,19 +331,39 @@ export default function YouTubeComments({ videoId, addToast, totalCommentCount, 
     const needsFetch =
       comment &&
       comment.totalReplyCount > 0 &&
-      (!comment.replies || comment.replies.length < comment.totalReplyCount);
+      !comment.repliesFetched;
 
     if (needsFetch) {
       setLoadingReplies((prev) => new Set([...prev, commentId]));
       try {
-        const res = await fetchCommentReplies(commentId);
+        const res = await fetchCommentReplies(commentId, null, 10);
         if (res.success && res.replies) {
           setComments((prev) =>
-            prev.map((c) => (c.id === commentId ? { ...c, replies: res.replies } : c))
+            prev.map((c) => {
+              if (c.id === commentId) {
+                const existingReplies = c.replies || [];
+                const fetchedIds = new Set(res.replies.map((r) => r.id));
+                const merged = [
+                  ...res.replies,
+                  ...existingReplies.filter((r) => !fetchedIds.has(r.id)),
+                ];
+                return {
+                  ...c,
+                  replies: merged,
+                  repliesNextPageToken: res.nextPageToken || null,
+                  repliesFetched: true,
+                };
+              }
+              return c;
+            })
           );
+          setOpenReplies((prev) => new Set([...prev, commentId]));
+        } else if (res.error) {
+          if (addToast) addToast(res.error, "error");
         }
       } catch (err) {
         console.error("fetchCommentReplies error:", err);
+        if (addToast) addToast("Yanıtlar yüklenirken bir hata oluştu.", "error");
       } finally {
         setLoadingReplies((prev) => {
           const next = new Set(prev);
@@ -346,9 +371,51 @@ export default function YouTubeComments({ videoId, addToast, totalCommentCount, 
           return next;
         });
       }
+    } else {
+      setOpenReplies((prev) => new Set([...prev, commentId]));
+    }
+  };
+
+  // Bir yorumun daha fazla yanıtını çek (10'ar 10'ar pagination)
+  const handleLoadMoreReplies = async (commentId) => {
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment || !comment.repliesNextPageToken || loadingMoreReplies.has(commentId)) {
+      return;
     }
 
-    setOpenReplies((prev) => new Set([...prev, commentId]));
+    setLoadingMoreReplies((prev) => new Set([...prev, commentId]));
+
+    try {
+      const res = await fetchCommentReplies(commentId, comment.repliesNextPageToken, 10);
+      if (res.success && res.replies) {
+        setComments((prev) =>
+          prev.map((c) => {
+            if (c.id === commentId) {
+              const currentReplies = c.replies || [];
+              const existingIds = new Set(currentReplies.map((r) => r.id));
+              const newReplies = res.replies.filter((r) => !existingIds.has(r.id));
+              return {
+                ...c,
+                replies: [...currentReplies, ...newReplies],
+                repliesNextPageToken: res.nextPageToken || null,
+              };
+            }
+            return c;
+          })
+        );
+      } else if (res.error) {
+        if (addToast) addToast(res.error, "error");
+      }
+    } catch (err) {
+      console.error("handleLoadMoreReplies error:", err);
+      if (addToast) addToast("Daha fazla yanıt yüklenirken hata oluştu.", "error");
+    } finally {
+      setLoadingMoreReplies((prev) => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -868,6 +935,33 @@ export default function YouTubeComments({ videoId, addToast, totalCommentCount, 
                       </div>
                     );
                   })}
+
+                  {/* Daha Fazla Yanıt / Yorum Butonu */}
+                  {comment.repliesNextPageToken && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => handleLoadMoreReplies(comment.id)}
+                        disabled={loadingMoreReplies.has(comment.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                      >
+                        {loadingMoreReplies.has(comment.id) ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
+                            <span>Daha fazla yorum yükleniyor...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3.5 w-3.5 text-blue-400" />
+                            <span>
+                              Daha fazla yorum ({comment.replies?.length || 0}
+                              {comment.totalReplyCount ? ` / ${formatCompactNumber(comment.totalReplyCount)}` : ""}
+                              )
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

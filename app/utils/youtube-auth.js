@@ -438,11 +438,17 @@ export async function deleteCommentOnYouTube(commentId) {
 /**
  * Bir yorumun alt yanıtlarını getir.
  * @param {string} parentId
- * @returns {Promise<{ success: boolean, replies?: Array, error?: string }>}
+ * @param {string|null} [pageToken=null]
+ * @param {number} [maxResults=10]
+ * @returns {Promise<{ success: boolean, replies?: Array, nextPageToken?: string|null, error?: string }>}
  */
-export async function fetchCommentReplies(parentId) {
+export async function fetchCommentReplies(parentId, pageToken = null, maxResults = 10) {
   try {
-    const res = await fetch(`/api/youtube/comments?parentId=${encodeURIComponent(parentId)}`);
+    let url = `/api/youtube/comments?parentId=${encodeURIComponent(parentId)}&maxResults=${encodeURIComponent(maxResults)}`;
+    if (pageToken) {
+      url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    }
+    const res = await fetch(url);
     const data = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || "Yanıtlar alınamadı." };
