@@ -208,6 +208,14 @@ export default function Home() {
           return;
         }
 
+        // Kullanıcı uyuşmazlığı koruması (Handshake check)
+        const apiKeyUsed = event.data.data?.api_key_used;
+        const currentUser = api.getCurrentUser();
+        if (apiKeyUsed && currentUser?.api_key && apiKeyUsed !== currentUser.api_key) {
+          addToast("Eklenti farklı bir hesaba bağlı. Lütfen eklenti ayarlarından API anahtarınızı güncelleyin.", "warning");
+          return;
+        }
+
         const ytId = rawLink.video_id || rawLink.videoId || getYouTubeId(rawLink.url);
         const normUrl = normalizeUrl(rawLink.url);
         const isClean = rawLink.is_clean || rawLink.is_watched || false;
