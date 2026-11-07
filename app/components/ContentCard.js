@@ -25,7 +25,8 @@ export default function ContentCard({
   activePlayingId, // Active playing card ID to prevent multiple simultaneous players
   addToast,
   onAddToFeed,
-  isInFeed
+  isInFeed,
+  isSearchActive = false
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
@@ -632,6 +633,19 @@ export default function ContentCard({
         </div>
 
         <div className="flex items-center gap-2">
+          {isSearchActive && (
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                video.is_private
+                  ? "bg-rose-500/10 border-rose-500/25 text-rose-300"
+                  : is_clean
+                  ? "bg-violet-500/10 border-violet-500/25 text-violet-300"
+                  : "bg-cyan-500/10 border-cyan-500/25 text-cyan-300"
+              }`}
+            >
+              {video.is_private ? "Gizli Kasa" : is_clean ? "Arşivde" : "My Feed"}
+            </span>
+          )}
           {type === "article" && read_time && (
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400">
               {read_time}

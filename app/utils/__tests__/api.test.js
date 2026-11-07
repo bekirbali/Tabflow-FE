@@ -74,6 +74,24 @@ describe('API Utils: Network Requests and Headers', () => {
     expect(calledConfig.headers['X-Vault-Token']).toBe('vault_key_123');
   });
 
+  it('should pass search parameters (q and search_all) when searching', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (h) => (h.toLowerCase() === 'content-type' ? 'application/json' : null)
+      },
+      json: async () => [{ id: 'link-1', title: 'React Search Result' }]
+    });
+    global.fetch = fetchMock;
+
+    await api.getLinks({ q: 'React', searchAll: true });
+
+    expect(fetchMock).toHaveBeenCalled();
+    const calledUrl = fetchMock.mock.calls[0][0];
+    expect(calledUrl).toContain('q=React');
+    expect(calledUrl).toContain('search_all=true');
+  });
+
   it('should throw an error with backend detail when request fails', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

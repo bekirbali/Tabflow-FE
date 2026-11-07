@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark, Compass, SlidersHorizontal, RefreshCw } from "lucide-react";
+import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark, Compass, SlidersHorizontal, RefreshCw, Search } from "lucide-react";
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
+import SearchBar from "./components/SearchBar";
 import ContentCard from "./components/ContentCard";
 import SkeletonCard from "./components/SkeletonCard";
 import FocusModeModal from "./components/FocusModeModal";
@@ -90,6 +91,12 @@ export default function Home() {
 
   // Active playing video in feed (for Ctrl+W / W shortcut tracking)
   const [playingVideoId, setPlayingVideoId] = useState(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const isSearchActive = searchQuery.trim().length > 0;
 
   // Secret / Private tab unlock handler
   const handleSecretUnlock = async (password) => {
@@ -307,13 +314,78 @@ export default function Home() {
     };
   }, []);
 
-  // Reset infinite scroll page chunk when activeTab or discoverFilter changes
+  // Reset infinite scroll page chunk when activeTab, discoverFilter, or searchQuery changes
   useEffect(() => {
     const timer = setTimeout(() => {
       setVisibleCount(ITEMS_PER_PAGE);
     }, 0);
     return () => clearTimeout(timer);
-  }, [activeTab, discoverFilter]);
+  }, [activeTab, discoverFilter, searchQuery]);
+
+  // Global search with 300ms debounce
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        if (user) {
+          const data = await api.getLinks({
+            q: trimmed,
+            searchAll: true,
+            includePrivate: isPrivateUnlocked,
+          });
+          const mapped = data.map((v) => {
+            const ytId = v.video_id || v.videoId || getYouTubeId(v.url);
+            const isClean = v.is_clean || v.is_watched || false;
+            return {
+              id: v.id,
+              videoId: ytId,
+              video_id: ytId,
+              url: v.url,
+              type: ytId ? "video" : (v.type || "general"),
+              title: v.title,
+              source_name: v.source_name || v.author_name || (ytId ? "YouTube" : "Bilinmeyen Kaynak"),
+              is_clean: isClean,
+              is_watched: isClean,
+              watched_at: v.watched_at || (isClean ? v.created_at : null),
+              liked: v.liked,
+              bookmarked: v.bookmarked,
+              is_private: v.is_private || false,
+              duration: v.duration,
+              metadata: v.metadata || {},
+              curator: v.curator,
+              category: v.category,
+              created_at: v.created_at,
+            };
+          });
+          setSearchResults(mapped);
+        } else {
+          const lower = trimmed.toLowerCase();
+          const localFiltered = videos.filter((v) => {
+            if (!isPrivateUnlocked && v.is_private) return false;
+            const titleMatch = (v.title || "").toLowerCase().includes(lower);
+            const sourceMatch = (v.source_name || v.author_name || "").toLowerCase().includes(lower);
+            const urlMatch = (v.url || "").toLowerCase().includes(lower);
+            const vidMatch = (v.video_id || v.videoId || "").toLowerCase().includes(lower);
+            return titleMatch || sourceMatch || urlMatch || vidMatch;
+          });
+          setSearchResults(localFiltered);
+        }
+      } catch (err) {
+        console.error("Arama hatası:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, user, isPrivateUnlocked, videos]);
 
   // Fetch from Django Cloud Database with Lazy-Loading Tab Support
   async function fetchCloudVideos(options = {}) {
@@ -620,8 +692,11 @@ export default function Home() {
     setFocusedIndex(-1);
   }, [feedSort, feedSortDir]);
 
-  // Calculate filtered lists based on active tab with proper ordering
+  // Calculate filtered lists based on active tab or active search with proper ordering
   const filteredVideos = useMemo(() => {
+    if (isSearchActive) {
+      return searchResults;
+    }
     if (activeTab === "feed") {
       const activeFeed = videos.filter((v) => !(v.is_clean || v.is_watched) && !v.is_private);
       return [...activeFeed].sort((a, b) => {
@@ -715,7 +790,7 @@ export default function Home() {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     return [];
-  }, [videos, activeTab, discoverVideos, discoverFilter, isVideoShorts, feedSort, feedSortDir, parseDurationToSeconds]);
+  }, [videos, activeTab, discoverVideos, discoverFilter, isVideoShorts, feedSort, feedSortDir, parseDurationToSeconds, isSearchActive, searchResults]);
 
   // Paginated/Chunked items for infinite scroll (drastically improves performance with large archives)
   const displayedVideos = useMemo(() => {
@@ -1390,6 +1465,16 @@ export default function Home() {
         {/* Input paste link bar */}
         <AddLinkBar onAddLink={handleAddLink} addToast={addToast} onSecretUnlock={user ? handleSecretUnlock : null} />
 
+        {/* Global Search bar */}
+        <SearchBar
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          onClear={() => setSearchQuery("")}
+          isLoading={isSearching}
+          totalResults={searchResults.length}
+          isSearchActive={isSearchActive}
+        />
+
         {/* Navigation Switcher Tabs */}
         <div className="sticky top-3 z-30 flex justify-center pointer-events-none">
           <nav className="pointer-events-auto flex p-1.5 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl max-w-full overflow-x-auto no-scrollbar">
@@ -1549,8 +1634,27 @@ export default function Home() {
 
         {/* Content Lists */}
         <main className="mt-2">
+          {/* Global Arama Durum ve Sonuç Bilgi Çubuğu */}
+          {isSearchActive && (
+            <div className="max-w-2xl mx-auto w-full mb-6 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-violet-950/40 border border-violet-500/20 text-xs text-violet-200 shadow-lg shadow-violet-950/20 animate-fadeIn">
+              <div className="flex items-center gap-2 min-w-0">
+                <Search className="h-4 w-4 text-violet-400 shrink-0" />
+                <span className="truncate">
+                  <span className="font-semibold text-white">&quot;{searchQuery}&quot;</span> için{" "}
+                  <span className="font-bold text-violet-300">{filteredVideos.length}</span> sonuç bulundu (Tüm Kütüphane)
+                </span>
+              </div>
+              <button
+                onClick={() => setSearchQuery("")}
+                className="shrink-0 px-2.5 py-1 rounded-lg bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 hover:text-white border border-violet-500/20 transition-all cursor-pointer text-[11px] font-semibold active:scale-95"
+              >
+                Aramayı Kapat
+              </button>
+            </div>
+          )}
+
           {/* Keşfet Üst Filtre & Yönetim Çubuğu */}
-          {activeTab === "discover" && (
+          {!isSearchActive && activeTab === "discover" && (
             <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-1 bg-zinc-900/70 border border-white/5 p-1 rounded-xl">
                 <button
@@ -1624,7 +1728,7 @@ export default function Home() {
           )}
 
           {/* My Feed Üst Sıralama Çubuğu */}
-          {activeTab === "feed" && filteredVideos.length > 0 && (
+          {!isSearchActive && activeTab === "feed" && filteredVideos.length > 0 && (
             <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-2 px-1">
               <div className="flex items-center gap-1.5 text-xs text-zinc-400">
                 <SlidersHorizontal className="h-3.5 w-3.5 text-violet-400" />
@@ -1698,6 +1802,7 @@ export default function Home() {
                       addToast={addToast}
                       onAddToFeed={activeTab === "discover" ? () => handleAddFromDiscover(video) : undefined}
                       isInFeed={videos.some((v) => (v.video_id || v.videoId) === (video.video_id || video.videoId) || normalizeUrl(v.url) === normalizeUrl(video.url))}
+                      isSearchActive={isSearchActive}
                     />
                   </div>
                 ))}
@@ -1727,7 +1832,25 @@ export default function Home() {
             ) : (
               // Empty states
               <div className="flex flex-col items-center justify-center p-16 text-center bg-zinc-900/20 border border-white/5 rounded-3xl border-dashed">
-                {activeTab === "feed" ? (
+                {isSearchActive ? (
+                  <div className="flex flex-col items-center max-w-md animate-fadeIn text-center">
+                    <div className="h-14 w-14 bg-zinc-800/80 border border-white/10 rounded-2xl flex items-center justify-center mb-4 text-zinc-400">
+                      <Search className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-base font-bold text-zinc-100">
+                      Sonuç Bulunamadı
+                    </h3>
+                    <p className="mt-1 text-xs text-zinc-400 leading-relaxed">
+                      &quot;{searchQuery}&quot; ile eşleşen video bulunamadı. Başka bir anahtar kelime, kanal adı veya video bağlantısı deneyebilirsiniz.
+                    </p>
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="mt-4 px-3.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 transition-colors cursor-pointer"
+                    >
+                      Aramayı Temizle
+                    </button>
+                  </div>
+                ) : activeTab === "feed" ? (
                   <div className="flex flex-col items-center max-w-md animate-fadeIn">
                     <div className="h-16 w-16 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center mb-5 text-emerald-400 shadow-xl shadow-emerald-950/20">
                       <Check className="h-8 w-8 stroke-[3]" />
@@ -1736,7 +1859,7 @@ export default function Home() {
                       Mükemmel! TabFlow Sıfırlandı
                     </h3>
                     <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
-                      İşlem bekleyen tüm bağlantıları tamamlayıp <strong>Inbox Zero</strong> başarısına ulaştınız. Zihniniz artık tertemiz! 🎉
+                      İşlem bekleyen tüm bağlantıları tamamlayıp <strong>Inbox Zero</strong> başarısına ulaştınız. Zihniniz artık tertemiz.
                     </p>
                   </div>
                 ) : activeTab === "discover" ? (

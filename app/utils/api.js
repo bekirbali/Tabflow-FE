@@ -169,6 +169,8 @@ export const api = {
     const isBool = typeof options === "boolean";
     const includePrivate = isBool ? options : (options.includePrivate || false);
     const tab = isBool ? "" : (options.tab || "");
+    const search = isBool ? "" : (options.q || options.search || "");
+    const searchAll = isBool ? false : (options.searchAll || options.search_all || false);
 
     const params = new URLSearchParams();
     const vaultToken = _getVaultToken();
@@ -177,6 +179,12 @@ export const api = {
     }
     if (tab) {
       params.append("tab", tab);
+    }
+    if (search) {
+      params.append("q", search);
+    }
+    if (searchAll) {
+      params.append("search_all", "true");
     }
     const qs = params.toString() ? `?${params.toString()}` : "";
     return request(`/links/${qs}`);
