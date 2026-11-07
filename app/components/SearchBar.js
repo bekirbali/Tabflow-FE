@@ -13,14 +13,14 @@ export default function SearchBar({
 }) {
   const inputRef = useRef(null);
 
-  // Global '/' kısayolu ile arama kutusuna odaklanma
+  // Global Ctrl+K / Cmd+K kısayolu ile arama kutusuna odaklanma
   useEffect(() => {
     const handleKeyDown = (e) => {
       // Eğer kullanıcı başka bir input veya textarea içindeyse kısayolu engelle
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea") return;
 
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         inputRef.current?.focus();
       }
@@ -78,7 +78,7 @@ export default function SearchBar({
             </button>
           ) : (
             <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-white/5 text-[10px] font-mono text-zinc-400 select-none pointer-events-none">
-              <span>/</span>
+              <span>Ctrl+K</span>
             </div>
           )}
         </div>

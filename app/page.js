@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark, Compass, SlidersHorizontal, RefreshCw, Search } from "lucide-react";
+import { Inbox, Archive, Check, AlertCircle, AlertTriangle, Heart, Bookmark, Compass, SlidersHorizontal, RefreshCw, Search, X } from "lucide-react";
 import StatsHeader from "./components/StatsHeader";
 import AddLinkBar from "./components/AddLinkBar";
 import SearchBar from "./components/SearchBar";
@@ -96,7 +96,26 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
   const isSearchActive = searchQuery.trim().length > 0;
+
+  // Global Ctrl+K / Cmd+K kısayolu ile arama çubuğunu açma
+  useEffect(() => {
+    const handleGlobalSearchShortcut = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalSearchShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalSearchShortcut);
+  }, []);
 
   // Secret / Private tab unlock handler
   const handleSecretUnlock = async (password) => {
@@ -1465,16 +1484,6 @@ export default function Home() {
         {/* Input paste link bar */}
         <AddLinkBar onAddLink={handleAddLink} addToast={addToast} onSecretUnlock={user ? handleSecretUnlock : null} />
 
-        {/* Global Search bar */}
-        <SearchBar
-          query={searchQuery}
-          onQueryChange={setSearchQuery}
-          onClear={() => setSearchQuery("")}
-          isLoading={isSearching}
-          totalResults={searchResults.length}
-          isSearchActive={isSearchActive}
-        />
-
         {/* Navigation Switcher Tabs */}
         <div className="sticky top-3 z-30 flex justify-center pointer-events-none">
           <nav className="pointer-events-auto flex p-1.5 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl max-w-full overflow-x-auto no-scrollbar">
@@ -1634,27 +1643,8 @@ export default function Home() {
 
         {/* Content Lists */}
         <main className="mt-2">
-          {/* Global Arama Durum ve Sonuç Bilgi Çubuğu */}
-          {isSearchActive && (
-            <div className="max-w-2xl mx-auto w-full mb-6 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-violet-950/40 border border-violet-500/20 text-xs text-violet-200 shadow-lg shadow-violet-950/20 animate-fadeIn">
-              <div className="flex items-center gap-2 min-w-0">
-                <Search className="h-4 w-4 text-violet-400 shrink-0" />
-                <span className="truncate">
-                  <span className="font-semibold text-white">&quot;{searchQuery}&quot;</span> için{" "}
-                  <span className="font-bold text-violet-300">{filteredVideos.length}</span> sonuç bulundu (Tüm Kütüphane)
-                </span>
-              </div>
-              <button
-                onClick={() => setSearchQuery("")}
-                className="shrink-0 px-2.5 py-1 rounded-lg bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 hover:text-white border border-violet-500/20 transition-all cursor-pointer text-[11px] font-semibold active:scale-95"
-              >
-                Aramayı Kapat
-              </button>
-            </div>
-          )}
-
           {/* Keşfet Üst Filtre & Yönetim Çubuğu */}
-          {!isSearchActive && activeTab === "discover" && (
+          {!isSearchActive && !isSearchOpen && activeTab === "discover" && (
             <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-1 bg-zinc-900/70 border border-white/5 p-1 rounded-xl">
                 <button
@@ -1727,44 +1717,120 @@ export default function Home() {
             </div>
           )}
 
-          {/* My Feed Üst Sıralama Çubuğu */}
-          {!isSearchActive && activeTab === "feed" && filteredVideos.length > 0 && (
-            <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-2 px-1">
-              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-                <SlidersHorizontal className="h-3.5 w-3.5 text-violet-400" />
-                <span className="font-medium text-zinc-300">Sırala:</span>
+          {/* Kompakt Arama Barı (Açıkken) */}
+          {(isSearchOpen || isSearchActive) ? (
+            <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-2 px-3 py-2 bg-zinc-900/90 border border-violet-500/30 rounded-2xl shadow-xl shadow-violet-950/20 animate-fadeIn">
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <Search className="h-4 w-4 text-violet-400 shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSearchQuery("");
+                      setIsSearchOpen(false);
+                    }
+                  }}
+                  placeholder="Geçmişte ara... (başlık, kanal, link veya video ID)"
+                  className="w-full bg-transparent text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
+                  autoFocus
+                />
               </div>
 
-              <div className="flex items-center gap-1 bg-zinc-900/70 border border-white/5 p-1 rounded-xl">
-                {[
-                  { id: "added", label: "Eklenme", title: "TabFlow'a eklenme tarihine göre" },
-                  { id: "published", label: "YouTube", title: "YouTube'a eklenme (yayın) tarihine göre" },
-                  { id: "duration", label: "Süre", title: "Videoların süresine göre" },
-                  { id: "channel", label: "Kanal", title: "Kanal isimlerinin alfabetik sırasına göre" },
-                ].map((opt) => {
-                  const isActive = feedSort === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      onClick={() => handleSortChange(opt.id)}
-                      title={opt.title}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        isActive
-                          ? "bg-zinc-800 text-violet-400 shadow-sm border border-violet-500/20"
-                          : "text-zinc-400 hover:text-zinc-200"
-                      }`}
-                    >
-                      <span>{opt.label}</span>
-                      {isActive && (
-                        <span className="text-[10px] text-violet-300 font-bold ml-0.5">
-                          {feedSortDir === "asc" ? "↑" : "↓"}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+              <div className="flex items-center gap-2 shrink-0">
+                {isSearching ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-violet-400" />
+                ) : searchQuery ? (
+                  <span className="text-[11px] font-semibold text-violet-300 px-2 py-0.5 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                    {filteredVideos.length} sonuç
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded hidden sm:inline select-none">
+                    Esc
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setIsSearchOpen(false);
+                  }}
+                  title="Aramayı Kapat (Esc)"
+                  className="flex items-center justify-center h-6 w-6 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
+          ) : (
+            /* Sıralama & Arama İkon Çubuğu (Arama Kapalıyken) */
+            activeTab === "feed" && filteredVideos.length > 0 ? (
+              <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-violet-400" />
+                  <span className="font-medium text-zinc-300">Sırala:</span>
+                </div>
+
+                <div className="flex items-center gap-1 bg-zinc-900/70 border border-white/5 p-1 rounded-xl">
+                  {[
+                    { id: "added", label: "Eklenme", title: "TabFlow'a eklenme tarihine göre" },
+                    { id: "published", label: "YouTube", title: "YouTube'a eklenme (yayın) tarihine göre" },
+                    { id: "duration", label: "Süre", title: "Videoların süresine göre" },
+                    { id: "channel", label: "Kanal", title: "Kanal isimlerinin alfabetik sırasına göre" },
+                  ].map((opt) => {
+                    const isActive = feedSort === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => handleSortChange(opt.id)}
+                        title={opt.title}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          isActive
+                            ? "bg-zinc-800 text-violet-400 shadow-sm border border-violet-500/20"
+                            : "text-zinc-400 hover:text-zinc-200"
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {isActive && (
+                          <span className="text-[10px] text-violet-300 font-bold ml-0.5">
+                            {feedSortDir === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  <div className="h-4 w-[1px] bg-zinc-800 mx-0.5" />
+
+                  <button
+                    onClick={() => {
+                      setIsSearchOpen(true);
+                      setTimeout(() => searchInputRef.current?.focus(), 50);
+                    }}
+                    title="Geçmişte veya akışta ara (Ctrl+K)"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-violet-300 hover:bg-zinc-800/80 transition-all cursor-pointer"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Ara</span>
+                  </button>
+                </div>
+              </div>
+            ) : activeTab !== "discover" ? (
+              <div className="max-w-2xl mx-auto w-full mb-4 flex items-center justify-end px-1">
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 50);
+                  }}
+                  title="Geçmişte veya akışta ara (Ctrl+K)"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900/70 hover:bg-zinc-800 border border-white/5 text-xs font-semibold text-zinc-400 hover:text-violet-300 transition-all cursor-pointer"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>Geçmişte Ara</span>
+                </button>
+              </div>
+            ) : null
           )}
 
           {/* Inbox Feed and Archive Feed */}
@@ -1959,6 +2025,10 @@ export default function Home() {
         <div className="flex items-center gap-1.5">
           <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 border border-white/10 text-white font-mono font-bold text-[10px]">Z</kbd>
           <span>Geri Al</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 border border-white/10 text-white font-mono font-bold text-[10px]">Ctrl+K</kbd>
+          <span>Ara</span>
         </div>
       </div>
 
